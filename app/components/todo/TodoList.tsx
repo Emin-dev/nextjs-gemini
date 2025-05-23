@@ -8,9 +8,12 @@ interface TodoListProps {
   onToggle: (id: number) => void;
   onRemove: (id: number) => void;
   onUpdateText: (id: number, newText: string) => void;
-  undoableActions: Map<number, UndoableActionDetails>; // Changed to Map
+  undoableActions: Map<number, UndoableActionDetails>;
   onUndo: (id: number) => void;
   undoTimeoutDuration: number;
+  // New props for Stage 2 grace period
+  onRestoreDuringGracePeriod?: (id: number) => void;
+  currentTime?: number;
 }
 
 const EmptyStateIcon = () => (
@@ -35,13 +38,13 @@ export function TodoList({
   onToggle, 
   onRemove, 
   onUpdateText, 
-  undoableActions, // Changed to Map
+  undoableActions, 
   onUndo, 
-  undoTimeoutDuration 
+  undoTimeoutDuration,
+  onRestoreDuringGracePeriod, // Pass down
+  currentTime // Pass down
 }: TodoListProps) {
   
-  // Basic empty state for when the filtered list is empty.
-  // The main page (app/page.tsx) has more sophisticated empty state logic for different scenarios.
   if (todos.length === 0) {
     return (
       <div className="text-center text-slate-500 mt-10 p-6 border-2 border-dashed border-slate-700 rounded-lg">
@@ -63,9 +66,11 @@ export function TodoList({
             onToggle={onToggle}
             onRemove={onRemove}
             onUpdateText={onUpdateText}
-            undoableAction={currentUndoAction} // Pass the specific action for this todo
+            undoableAction={currentUndoAction}
             onUndo={onUndo}
             undoTimeoutDuration={undoTimeoutDuration}
+            onRestoreDuringGracePeriod={onRestoreDuringGracePeriod}
+            currentTime={currentTime}
           />
         );
       })}

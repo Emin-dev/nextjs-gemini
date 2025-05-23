@@ -13,18 +13,21 @@ export interface Todo {
   text: string;
   completed: boolean;
   isDeleted?: boolean;
-  // Removed Stage 2 deletion fields: pendingFinalDeletionTimestamp, batchId
+  pendingFinalDeletionTimestamp?: number | null; // For Stage 2 grace period
+  batchId?: string | null; // For Stage 2 & 4 batch tracking
 }
 
 interface TodoItemProps {
   todo: Todo;
   onToggle: (id: number) => void;
-  onRemove: (id: number) => void; // This is for soft delete (Stage 1) or initiating restore from soft delete
+  onRemove: (id: number) => void; 
   onUpdateText: (id: number, newText: string) => void;
-  undoableAction: UndoableActionDetails | null; 
-  onUndo: (id: number) => void; // For Stage 1 undo
-  undoTimeoutDuration: number;
-  // Removed Stage 2 props: onRestoreDuringGracePeriod, currentTime
+  undoableAction: UndoableActionDetails | null; // For Stage 1
+  onUndo: (id: number) => void; // For Stage 1
+  undoTimeoutDuration: number; // For Stage 1
+  // New props for Stage 2 grace period
+  onRestoreDuringGracePeriod?: (id: number) => void;
+  currentTime?: number;
 }
 
 const EditIcon = () => (
@@ -59,7 +62,9 @@ export function TodoItem({
   onUpdateText, 
   undoableAction, 
   onUndo, 
-  undoTimeoutDuration 
+  undoTimeoutDuration,
+  onRestoreDuringGracePeriod,
+  currentTime
 }: TodoItemProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(todo.text);
@@ -70,49 +75,51 @@ export function TodoItem({
   const itemRef = useRef<HTMLLIElement>(null);
   
   const [stage1UndoCountdown, setStage1UndoCountdown] = useState(0);
-  // Removed stage2GraceCountdown
+  const [stage2GraceCountdown, setStage2GraceCountdown] = useState(0);
 
   const isStage1UndoActive = undoableAction?.id === todo.id && undoableAction?.actionType === 'delete';
-  // Removed isStage2GraceActive
+  const isStage2GraceActive = !!(todo.isDeleted && todo.pendingFinalDeletionTimestamp && currentTime && currentTime < todo.pendingFinalDeletionTimestamp && onRestoreDuringGracePeriod);
 
-  // Effect for Stage 1 Undo Countdown (20 seconds)
+  // Effect for Stage 1 Undo Countdown
   useEffect(() => {
     if (isStage1UndoActive) {
-      setStage1UndoCountdown(undoTimeoutDuration / 1000);
+      setStage1UndoCountdown(Math.ceil(undoTimeoutDuration / 1000));
       const interval = setInterval(() => {
-        setStage1UndoCountdown(prev => {
-          if (prev <= 1) {
-            clearInterval(interval);
-            return 0;
-          }
-          return prev - 1;
-        });
+        setStage1UndoCountdown(prev => Math.max(0, prev - 1));
       }, 1000);
       return () => clearInterval(interval);
-    }\ else {
-      setStage1UndoCountdown(0); // Reset countdown if not active
+    } else {
+      setStage1UndoCountdown(0);
     }
-  }, [isStage1UndoActive, todo.id, undoableAction, undoTimeoutDuration]);
+  }, [isStage1UndoActive, undoTimeoutDuration]);
 
-  // Removed Effect for Stage 2 Grace Period Countdown
+  // Effect for Stage 2 Grace Period Countdown
+  useEffect(() => {
+    if (isStage2GraceActive && todo.pendingFinalDeletionTimestamp && currentTime) {
+      const timeLeft = Math.max(0, Math.ceil((todo.pendingFinalDeletionTimestamp - currentTime) / 1000));
+      setStage2GraceCountdown(timeLeft);
+      // No interval needed here as currentTime prop updates will trigger re-renders and re-calculation
+    } else {
+      setStage2GraceCountdown(0);
+    }
+  }, [isStage2GraceActive, todo.pendingFinalDeletionTimestamp, currentTime]);
 
   useEffect(() => {
-    if (isEditing) {
+    if (isEditing && !isStage1UndoActive && !isStage2GraceActive) {
       inputRef.current?.focus();
       inputRef.current?.select();
     }
-  }, [isEditing]);
+  }, [isEditing, isStage1UndoActive, isStage2GraceActive]);
 
   useEffect(() => {
     if (!isEditing && todo.text !== editText) {
       setEditText(todo.text);
     }
-  }, [todo.text, isEditing]); // editText removed from deps previously
+  }, [todo.text, isEditing, editText]);
 
   useEffect(() => {
-    if (todo.text !== prevTodoText.current || todo.completed !== prevTodoCompleted.current) {
-      if ( (todo.text !== prevTodoText.current && prevTodoText.current !== undefined) || 
-           (todo.completed !== prevTodoCompleted.current && prevTodoCompleted.current !== undefined)){
+    if (prevTodoText.current !== todo.text || prevTodoCompleted.current !== todo.completed) {
+      if (prevTodoText.current !== undefined || prevTodoCompleted.current !== undefined) { // Avoid on initial mount
         setJustSaved(true);
         const timer = setTimeout(() => setJustSaved(false), SAVE_FEEDBACK_DURATION);
         prevTodoText.current = todo.text;
@@ -120,42 +127,40 @@ export function TodoItem({
         return () => clearTimeout(timer);
       }
     }
-    prevTodoText.current = todo.text;
+    prevTodoText.current = todo.text; // Ensure refs are set on first render too
     prevTodoCompleted.current = todo.completed;
   }, [todo.text, todo.completed]);
 
+  const isInteractive = !isStage1UndoActive && !isStage2GraceActive;
+
   const handleToggle = () => {
-    if (isStage1UndoActive) return; // Prevent toggle if in undo/grace
+    if (!isInteractive) return;
     onToggle(todo.id);
   }
 
   const handleSave = () => {
+    if (!isInteractive) return;
     const trimmedText = editText.trim();
     setIsEditing(false);
     if (trimmedText === '') {
-      if (!isStage1UndoActive) onRemove(todo.id); // Soft delete if empty
+      onRemove(todo.id); // Will trigger Stage 1 soft delete
     } else if (trimmedText !== todo.text) {
-      if (!isStage1UndoActive) onUpdateText(todo.id, trimmedText);
+      onUpdateText(todo.id, trimmedText);
     } 
   };
 
   const handleInputKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-        e.preventDefault();
-        handleSave();
-    } else if (e.key === 'Escape') {
-      setEditText(todo.text);
-      setIsEditing(false);
-    }
+    if (e.key === 'Enter') { e.preventDefault(); handleSave(); }
+    else if (e.key === 'Escape') { setEditText(todo.text); setIsEditing(false); }
   };
   
+  const handleLabelDoubleClick = () => {
+    if (isInteractive && !todo.isDeleted) { setEditText(todo.text); setIsEditing(true); }
+  };
+
   const handleLabelKeyDown = (e: KeyboardEvent<HTMLLabelElement>) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      if (!todo.isDeleted && !isStage1UndoActive) {
-        setEditText(todo.text);
-        setIsEditing(true);
-      }
+    if ((e.key === 'Enter' || e.key === ' ') && isInteractive && !todo.isDeleted) {
+      e.preventDefault(); setEditText(todo.text); setIsEditing(true);
     }
   };
 
@@ -167,16 +172,16 @@ export function TodoItem({
     'border-slate-600',
     'hover:shadow-lg',
     'focus-within:shadow-lg focus-within:ring-2 focus-within:ring-sky-500 focus-within:ring-offset-2 focus-within:ring-offset-slate-800',
-    'transition-all',
-    'duration-300',
-    (todo.isDeleted && !isStage1UndoActive) ? 'opacity-50' : '', // Adjusted opacity for soft-deleted non-undo items
-    isStage1UndoActive ? 'opacity-70 ring-2 ring-yellow-500 ring-offset-2 ring-offset-slate-800' : '',
-    justSaved && !isStage1UndoActive ? 'border-sky-500 shadow-sky-md' : 'border-slate-600',
-    // Removed isStage2GraceActive class
+    'transition-all duration-300',
+    (todo.isDeleted && !isStage1UndoActive && !isStage2GraceActive) ? 'opacity-60' : '',
+    isStage1UndoActive ? 'opacity-80 ring-2 ring-yellow-500 ring-offset-2 ring-offset-slate-800 animate-pulseSlow' : '',
+    isStage2GraceActive ? 'opacity-80 ring-2 ring-red-600 ring-offset-2 ring-offset-slate-800 animate-pulse' : '',
+    justSaved && isInteractive ? 'border-sky-500 shadow-sky-md' : 'border-slate-600',
   ].join(' ');
 
-  const showEditButton = !isEditing && !todo.isDeleted && !isStage1UndoActive;
-  const showMainActionButtons = !isStage1UndoActive;
+  const showEditButton = !isEditing && !todo.isDeleted && isInteractive;
+  // Main action button visibility (delete/restore)
+  const showMainActionButtons = !isStage1UndoActive && !isStage2GraceActive;
 
   return (
     <Card<"li"> 
@@ -186,15 +191,15 @@ export function TodoItem({
       aria-labelledby={labelId}
       tabIndex={-1}
     >
-      <CardContent className="p-4 flex flex-col gap-3">
-        <div className="flex items-center justify-between gap-3">
+      <CardContent className="p-3 sm:p-4 flex flex-col gap-2 sm:gap-3">
+        <div className="flex items-center justify-between gap-2 sm:gap-3">
           <div className="flex items-center flex-grow min-w-0">
             <Image
-              src={`https://picsum.photos/seed/${todo.id}/600`}
-              alt={todo.isDeleted ? `Image for deleted task: ${todo.text}` : `Image for task: ${todo.text}`}
-              width={100}
-              height={100}
-              className="rounded-lg mr-4 flex-shrink-0 object-cover"
+              src={`https://picsum.photos/seed/${todo.id}/60`}
+              alt={todo.isDeleted ? `Task image: ${todo.text}` : `Task image: ${todo.text}`}
+              width={60}
+              height={60}
+              className="rounded-md mr-3 sm:mr-4 flex-shrink-0 object-cover"
               priority={false}
             />
             <div className="flex flex-col flex-grow min-w-0">
@@ -203,9 +208,9 @@ export function TodoItem({
                   id={checkboxId}
                   checked={todo.completed}
                   onCheckedChange={handleToggle}
-                  className="mr-3 border-slate-500 data-[state=checked]:bg-sky-600 data-[state=checked]:border-sky-600 flex-shrink-0 h-5 w-5 focus:ring-sky-500 focus:ring-offset-slate-800"
+                  className="mr-2 sm:mr-3 border-slate-500 data-[state=checked]:bg-sky-600 data-[state=checked]:border-sky-600 flex-shrink-0 h-5 w-5 focus:ring-sky-500 focus:ring-offset-slate-800"
                   aria-label={todo.completed ? `Mark task "${todo.text}" as incomplete` : `Mark task "${todo.text}" as complete`}
-                  disabled={!!todo.isDeleted || isStage1UndoActive || isEditing}
+                  disabled={!isInteractive || todo.isDeleted}
                 />
                 {isEditing ? (
                   <Input
@@ -215,25 +220,21 @@ export function TodoItem({
                     onChange={(e) => setEditText(e.target.value)}
                     onBlur={handleSave}
                     onKeyDown={handleInputKeyDown}
-                    className="flex-grow bg-slate-600 border-slate-500 text-white h-9 text-base p-2 rounded focus:ring-sky-500 focus:border-sky-500"
-                    disabled={!!todo.isDeleted || isStage1UndoActive} 
+                    className="flex-grow bg-slate-600 border-slate-500 text-white h-9 text-sm sm:text-base p-2 rounded focus:ring-sky-500 focus:border-sky-500"
+                    disabled={!isInteractive}
                     aria-label={`Edit text for task: ${todo.text}`}
                     id={labelId}
                   />
                 ) : (
                   <label
                     id={labelId}
-                    htmlFor={checkboxId}
-                    className={`text-slate-200 text-lg truncate 
-                      ${todo.completed && !isStage1UndoActive ? 'line-through text-slate-500' : ''} 
-                      ${(!!todo.isDeleted && !isStage1UndoActive) ? 'text-slate-500 cursor-not-allowed' : 'cursor-pointer hover:text-slate-100'}`}
-                    onDoubleClick={() => {
-                        if (!todo.isDeleted && !isStage1UndoActive) {
-                            setEditText(todo.text); setIsEditing(true);
-                        }
-                    }}
+                    htmlFor={isInteractive && !todo.isDeleted ? checkboxId : undefined}
+                    className={`text-slate-200 text-base sm:text-lg truncate 
+                      ${todo.completed && !isStage1UndoActive && !isStage2GraceActive ? 'line-through text-slate-400' : ''} 
+                      ${(!isInteractive || todo.isDeleted) ? 'text-slate-500 cursor-not-allowed' : 'cursor-pointer hover:text-slate-100'}`}
+                    onDoubleClick={handleLabelDoubleClick}
                     onKeyDown={handleLabelKeyDown}
-                    tabIndex={(!todo.isDeleted && !isStage1UndoActive) ? 0 : -1}
+                    tabIndex={isInteractive && !todo.isDeleted ? 0 : -1}
                     title={todo.text}
                   >
                     {todo.text}
@@ -242,12 +243,13 @@ export function TodoItem({
               </div>
             </div>
           </div>
-          <div className="flex flex-col items-center justify-start gap-1 self-start ml-2">
+          <div className="flex flex-col items-center justify-start gap-1 self-start ml-1 sm:ml-2">
             {showEditButton && (
                <Button 
                   variant="ghost" 
+                  size="icon"
                   onClick={() => { setEditText(todo.text); setIsEditing(true); }}
-                  className="text-sky-400 hover:text-sky-300 p-2 h-auto focus:ring-sky-500 focus:ring-offset-slate-800"
+                  className="text-sky-400 hover:text-sky-300 p-1.5 h-auto w-auto focus:ring-sky-500 focus:ring-offset-slate-800"
                   aria-label={`Edit task: ${todo.text}`}
                   title={`Edit task: ${todo.text}`}
                >
@@ -256,37 +258,51 @@ export function TodoItem({
             )}
             {showMainActionButtons && (
                 <Button
-                  onClick={() => onRemove(todo.id)}
+                  onClick={() => onRemove(todo.id)} // Handles soft-delete or restore from soft-delete
                   variant="ghost"
-                  className={`p-2 h-auto focus:ring-offset-slate-800 
-                    ${todo.isDeleted && !isStage1UndoActive ? 'text-yellow-400 hover:text-yellow-300 focus:ring-yellow-500' 
+                  size="icon"
+                  className={`p-1.5 h-auto w-auto focus:ring-offset-slate-800 
+                    ${todo.isDeleted ? 'text-yellow-400 hover:text-yellow-300 focus:ring-yellow-500' 
                                      : 'text-red-400 hover:text-red-300 focus:ring-red-500'}`}
-                  aria-label={(todo.isDeleted && !isStage1UndoActive) ? `Restore task: ${todo.text}` : `Delete task: ${todo.text}`}
-                  title={(todo.isDeleted && !isStage1UndoActive) ? `Restore task: ${todo.text}` : `Delete task: ${todo.text}`}
+                  aria-label={todo.isDeleted ? `Restore task: ${todo.text}` : `Delete task: ${todo.text}`}
+                  title={todo.isDeleted ? `Restore task: ${todo.text}` : `Delete task: ${todo.text}`}
                 >
-                  {(todo.isDeleted && !isStage1UndoActive) ? <RestoreIcon /> : <RemoveIcon />}
+                  {todo.isDeleted ? <RestoreIcon /> : <RemoveIcon />}
                 </Button>
             )}
           </div>
         </div>
 
-        {/* Stage 1: Soft Delete Undo Prompt (20s) */}
         {isStage1UndoActive && (
-          <div className="mt-2 p-3 bg-yellow-900/60 border border-yellow-700 rounded-md flex justify-between items-center animate-pulseSlow">
-            <p className="text-sm text-yellow-200">
-              Deleting in {stage1UndoCountdown}s...
+          <div className="mt-2 p-2 sm:p-3 bg-yellow-900/70 border border-yellow-700 rounded-md flex justify-between items-center animate-pulseSlow">
+            <p className="text-xs sm:text-sm text-yellow-200">
+              Marked for deletion. Undoing in {stage1UndoCountdown}s...
             </p>
             <Button 
               onClick={() => onUndo(todo.id)} 
               variant="outline"
               size="sm"
-              className="text-yellow-200 border-yellow-400 hover:bg-yellow-700 hover:text-yellow-100 focus:ring-yellow-500"
+              className="text-yellow-100 border-yellow-400 hover:bg-yellow-700 hover:text-yellow-50 focus:ring-yellow-500 text-xs sm:text-sm px-2 py-1 h-auto"
             >
               Undo Delete
             </Button>
           </div>
         )}
-        {/* Removed Stage 2 Grace Period Restore Prompt */}
+        {isStage2GraceActive && onRestoreDuringGracePeriod && (
+          <div className="mt-2 p-2 sm:p-3 bg-red-900/80 border border-red-700 rounded-md flex justify-between items-center animate-pulse">
+            <p className="text-xs sm:text-sm text-red-200">
+              Final deletion in {stage2GraceCountdown}s (Batch: {todo.batchId?.substring(6)})...
+            </p>
+            <Button 
+              onClick={() => onRestoreDuringGracePeriod(todo.id)} 
+              variant="outline"
+              size="sm"
+              className="text-red-100 border-red-400 hover:bg-red-700 hover:text-red-50 focus:ring-red-500 text-xs sm:text-sm px-2 py-1 h-auto"
+            >
+              Restore Task
+            </Button>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
