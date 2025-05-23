@@ -14,7 +14,10 @@ import {
   STATUS_MESSAGE_DURATION,
   UNDO_TIMEOUT, 
   STAGE_4_GLOBAL_RESTORE_WINDOW,
-  CURRENT_TIME_UPDATE_INTERVAL
+  CURRENT_TIME_UPDATE_INTERVAL,
+  FILTER_STORAGE_KEY,
+  SEARCH_QUERY_STORAGE_KEY,
+  EMPTYING_TRASH_BATCH_STORAGE_KEY
 } from './lib/constants';
 import { useTodoManagement } from './hooks/useTodoManagement';
 
@@ -95,11 +98,26 @@ export default function Home() {
 
   useEffect(() => {
     setIsClient(true);
+    try {
+      const storedFilter = localStorage.getItem(FILTER_STORAGE_KEY) as FilterValue | null;
+      if (storedFilter) setFilter(storedFilter);
+      const storedSearchQuery = localStorage.getItem(SEARCH_QUERY_STORAGE_KEY);
+      if (storedSearchQuery) setSearchQuery(storedSearchQuery);
+      const storedEmptyingTrashBatch = localStorage.getItem(EMPTYING_TRASH_BATCH_STORAGE_KEY);
+      if (storedEmptyingTrashBatch) {
+        setEmptyingTrashBatch(JSON.parse(storedEmptyingTrashBatch));
+      }
+    } catch (error) {
+      console.error("Error loading from localStorage:", error);
+      showStatusMessage("Error loading saved preferences.");
+    }
     setInitialLoadComplete(true);
+
     window.addEventListener('mousemove', resetInactivityTimer);
     window.addEventListener('keydown', resetInactivityTimer);
     resetInactivityTimer(); 
     const timeUpdateInterval = setInterval(() => setCurrentTime(Date.now()), CURRENT_TIME_UPDATE_INTERVAL);
+    
     return () => {
       window.removeEventListener('mousemove', resetInactivityTimer);
       window.removeEventListener('keydown', resetInactivityTimer);
@@ -109,9 +127,47 @@ export default function Home() {
       clearInterval(timeUpdateInterval);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resetInactivityTimer]);
+  }, [resetInactivityTimer]); 
+
+  useEffect(() => {
+    if (isClient && initialLoadComplete) {
+      try {
+        localStorage.setItem(FILTER_STORAGE_KEY, filter);
+      } catch (error) {
+        console.error("Error saving filter to localStorage:", error);
+        showStatusMessage("Error saving filter preference.");
+      }
+    }
+  }, [filter, isClient, initialLoadComplete, showStatusMessage]);
+
+  useEffect(() => {
+    if (isClient && initialLoadComplete) {
+      try {
+        localStorage.setItem(SEARCH_QUERY_STORAGE_KEY, searchQuery);
+      } catch (error) {
+        console.error("Error saving search query to localStorage:", error);
+        showStatusMessage("Error saving search preference.");
+      }
+    }
+  }, [searchQuery, isClient, initialLoadComplete, showStatusMessage]);
+
+  useEffect(() => {
+    if (isClient && initialLoadComplete) {
+      try {
+        if (emptyingTrashBatch) {
+          localStorage.setItem(EMPTYING_TRASH_BATCH_STORAGE_KEY, JSON.stringify(emptyingTrashBatch));
+        } else {
+          localStorage.removeItem(EMPTYING_TRASH_BATCH_STORAGE_KEY);
+        }
+      } catch (error) {
+        console.error("Error saving emptyingTrashBatch to localStorage:", error);
+        showStatusMessage("Error saving trash processing state.");
+      }
+    }
+  }, [emptyingTrashBatch, isClient, initialLoadComplete, showStatusMessage]);
 
   const showGlobalRestoreButton = useMemo(() => {
+    if (filter !== 'deleted') return false; 
     if (!emptyingTrashBatch || !emptyingTrashBatch.allIndividualTimersEndedForBatch || emptyingTrashBatch.isRestored) {
       return false;
     }
@@ -120,7 +176,7 @@ export default function Home() {
       return timeSinceCompletion < STAGE_4_GLOBAL_RESTORE_WINDOW;
     }
     return false;
-  }, [emptyingTrashBatch, currentTime]);
+  }, [emptyingTrashBatch, currentTime, filter]);
 
   const globalRestoreTimeRemainingString = useMemo(() => {
     if (!showGlobalRestoreButton || !emptyingTrashBatch || !emptyingTrashBatch.batchCompletionTime) return "";
@@ -135,18 +191,18 @@ export default function Home() {
     if (!isClient || !initialLoadComplete) return [];
     return todos.filter(todo => {
       const isInYellowBorderUndo = undoableActions.has(todo.id) && undoableActions.get(todo.id)?.actionType === 'delete';
-      const isPendingFinalDeletion = !!todo.pendingFinalDeletionTimestamp; // Red border phase
+      const isPendingFinalDeletion = !!todo.pendingFinalDeletionTimestamp; 
 
       let isVisible = false;
       switch (filter) {
         case 'all':
-          isVisible = !todo.isDeleted || isInYellowBorderUndo || (todo.isDeleted && isPendingFinalDeletion);
+          isVisible = !todo.isDeleted || isInYellowBorderUndo;
           break;
         case 'active':
-          isVisible = !todo.completed && (!todo.isDeleted || isInYellowBorderUndo) && !isPendingFinalDeletion;
+          isVisible = !todo.completed && (!todo.isDeleted || isInYellowBorderUndo);
           break;
         case 'completed':
-          isVisible = todo.completed && (!todo.isDeleted || isInYellowBorderUndo) && !isPendingFinalDeletion;
+          isVisible = todo.completed && (!todo.isDeleted || isInYellowBorderUndo);
           break;
         case 'deleted':
           isVisible = todo.isDeleted && !isInYellowBorderUndo;
@@ -154,7 +210,9 @@ export default function Home() {
         default:
           isVisible = true; 
       }
+
       if (!isVisible) return false;
+
       if (searchQuery.trim() !== '') {
         return todo.text.toLowerCase().includes(searchQuery.toLowerCase());
       }
@@ -173,16 +231,14 @@ export default function Home() {
   const activeTasksCount = useMemo(() => {
     return todos.filter(t => 
         !t.completed && 
-        !t.isDeleted && 
-        !t.markedForDeletionAt &&
-        !t.pendingFinalDeletionTimestamp &&
-        !(undoableActions.has(t.id) && undoableActions.get(t.id)?.actionType === 'delete')
+        (!t.isDeleted || (undoableActions.has(t.id) && undoableActions.get(t.id)?.actionType === 'delete')) &&
+        !t.pendingFinalDeletionTimestamp 
     ).length;
   }, [todos, undoableActions]);
   
   const softDeletedAndStage2Count = useMemo(() => {
     return todos.filter(t => 
-        t.isDeleted && // Corrected: was todo.isDeleted
+        t.isDeleted && 
         !(undoableActions.has(t.id) && undoableActions.get(t.id)?.actionType === 'delete')
     ).length;
   }, [todos, undoableActions]);
@@ -207,7 +263,7 @@ export default function Home() {
       if (emptyingTrashBatch && !emptyingTrashBatch.allIndividualTimersEndedForBatch) return { title: "Emptying Trash...", message: "Tasks are in their 1-minute final countdown." };
       if (showGlobalRestoreButton) return { title: "Batch Deleted!", message: `You have ${globalRestoreTimeRemainingString} to restore the batch.` };
       if (emptyingTrashBatch && emptyingTrashBatch.allIndividualTimersEndedForBatch && !emptyingTrashBatch.isRestored && emptyingTrashBatch.batchCompletionTime && (currentTime - emptyingTrashBatch.batchCompletionTime >= STAGE_4_GLOBAL_RESTORE_WINDOW) ) return { title: "Global Restore Window Expired", message: "The chance to restore the batch has passed." };
-      if (emptyingTrashBatch && emptyingTrashBatch.allIndividualTimersEndedForBatch && !emptyingTrashBatch.isRestored) return { title: "Global Restore Window Active", message: "The global restore window is currently active or just ended." }; // Fallback message
+      if (emptyingTrashBatch && emptyingTrashBatch.allIndividualTimersEndedForBatch && !emptyingTrashBatch.isRestored) return { title: "Global Restore Window Active", message: "The global restore window is currently active or just ended." };
       if (itemsEligibleForEmptyTrash > 0) return { title: "Trash contains items!", message: "Use 'Empty Trash' to start permanent deletion process." };
       return { title: "Trash is empty!", message: "You haven't deleted any tasks yet, or no tasks match the current search in trash." };
     }
@@ -242,7 +298,7 @@ export default function Home() {
           </CardHeader>
 
           <CardContent className="pt-2">
-            <TodoAddForm ref={todoAddFormRef} onAddTodo={addTodo} disabled={!initialLoadComplete || isActionInProgress} />
+            <TodoAddForm ref={todoAddFormRef} onAddTodo={addTodo} disabled={!initialLoadComplete} />
 
             {!isClient || !initialLoadComplete ? (
               <TodoListSkeleton />
@@ -265,6 +321,7 @@ export default function Home() {
                   onRestorePendingDeletion={undoIndividualPendingFinalDeletion} 
                   currentTime={currentTime}
                   emptyingTrashBatch={emptyingTrashBatch}
+                  currentFilter={filter} 
                 />
               )
             )}

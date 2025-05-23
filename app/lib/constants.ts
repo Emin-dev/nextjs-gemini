@@ -1,4 +1,8 @@
 export const LOCAL_STORAGE_KEY = 'nextjs-todo-app-todos';
+export const FILTER_STORAGE_KEY = 'todoAppFilter';
+export const SEARCH_QUERY_STORAGE_KEY = 'todoAppSearchQuery';
+export const UNDOABLE_ACTIONS_STORAGE_KEY = 'todoAppUndoableActions';
+export const EMPTYING_TRASH_BATCH_STORAGE_KEY = 'todoAppEmptyingTrashBatch';
 
 // Durations
 export const INACTIVITY_TIMEOUT = 3000; // 3 seconds for inactivity to focus input

@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import { Card, CardContent } from "@/components/ui/card";
 import { useRef, MouseEvent, useMemo } from 'react'; 
-import type { Todo, UndoableActionDetails, EmptyingTrashBatchDetails } from '../../types';
+import type { Todo, UndoableActionDetails, EmptyingTrashBatchDetails, FilterValue } from '../../types'; // Added FilterValue
 import { useSaveFeedback } from '../../hooks/useSaveFeedback';
 import { useTodoEditing } from '../../hooks/useTodoEditing';
 import { TodoDisplay } from './TodoDisplay';
@@ -20,9 +20,10 @@ interface TodoItemProps {
   undoableAction: UndoableActionDetails | null; 
   onUndo: (id: number) => void; 
   undoTimeoutDuration: number; 
-  onRestorePendingDeletion?: (id: number) => void; // For 1-min undo
+  onRestorePendingDeletion?: (id: number) => void; 
   currentTime: number; 
   emptyingTrashBatch: EmptyingTrashBatchDetails | null;
+  currentFilter: FilterValue; // Added currentFilter
 }
 
 export function TodoItem({ 
@@ -35,7 +36,8 @@ export function TodoItem({
   undoTimeoutDuration, 
   onRestorePendingDeletion,
   currentTime,
-  emptyingTrashBatch
+  emptyingTrashBatch,
+  currentFilter // Added currentFilter
 }: TodoItemProps) {
   const itemRef = useRef<HTMLLIElement>(null);
   const justSaved = useSaveFeedback(todo.text, todo.completed);
@@ -119,15 +121,16 @@ export function TodoItem({
     'focus-within:shadow-lg focus-within:ring-2 focus-within:ring-sky-500 focus-within:ring-offset-2 focus-within:ring-offset-slate-800',
     'transition-all duration-300',
     'w-full',
-    (todo.isDeleted && !isYellowBorderPhase && !isRedBorderPhase && !isStage1UndoActive) ? 'opacity-60' : '',
+    (todo.isDeleted && !isYellowBorderPhase && !isRedBorderPhase && !isStage1UndoActive && currentFilter !== 'deleted') ? 'opacity-50 line-through' : '', // Visual cue for soft-deleted items if not in special phase and not in deleted filter (should not happen with new filter logic)
+    (todo.isDeleted && currentFilter === 'deleted' && !isRedBorderPhase && !isStage1UndoActive) ? 'opacity-70' : '', // Slightly different opacity for items in deleted filter
     isStage1UndoActive ? 'ring-2 ring-yellow-400 ring-offset-1 ring-offset-slate-800 animate-pulseSlow' : '',
     isRedBorderPhase ? 'ring-2 ring-red-500 ring-offset-1 ring-offset-slate-800 animate-pulse' : '',
     justSaved && isInteractive ? 'border-sky-500 shadow-sky-md' : 'border-slate-600',
     isInteractive && !todo.isDeleted && !todo.markedForDeletionAt && !todo.pendingFinalDeletionTimestamp ? 'cursor-pointer' : '',
   ].filter(Boolean).join(' ');
 
-  const showEditButton = !isEditing && !todo.isDeleted && !isUndoOrDeletionPhaseActive;
-  const showMainActionButtons = !isUndoOrDeletionPhaseActive || isRedBorderPhase;
+  const showEditButton = !isEditing && !isUndoOrDeletionPhaseActive && currentFilter !== 'deleted';
+  const showMainActionButtons = !isUndoOrDeletionPhaseActive || isRedBorderPhase || (currentFilter === 'deleted' && todo.isDeleted && !isStage1UndoActive && !isRedBorderPhase);
 
   let primaryActionIcon: React.ReactElement;
   let primaryActionLabel: string;
@@ -136,7 +139,7 @@ export function TodoItem({
   let primaryActionDisabled = false;
   let currentActionType: PrimaryActionType = 'initial-delete'; 
 
-  if (isRedBorderPhase && onRestorePendingDeletion) {
+  if (isRedBorderPhase && onRestorePendingDeletion && currentFilter === 'deleted') {
     primaryActionIcon = <RotateCcw size={16} />;
     primaryActionLabel = `Undo permanent delete for: ${todo.text}`;
     primaryActionTitle = `Undo permanent delete (${redBorderCountdown}s left)`;
@@ -148,7 +151,7 @@ export function TodoItem({
     primaryActionTitle = `Undo delete (${stage1UndoCountdown}s left)`;
     onPrimaryAction = () => onUndo(todo.id);
     currentActionType = 'undo-initial-delete';
-  } else if (todo.isDeleted && !isRedBorderPhase) {
+  } else if (todo.isDeleted && !isRedBorderPhase && currentFilter === 'deleted') { // Only show Restore for items in 'deleted' filter
     if (undoableAction && undoableAction.actionType === 'restore' && undoableAction.id === todo.id && onUndo) {
       primaryActionIcon = <Trash2 size={16} />;
       primaryActionLabel = `Undo restoration of: ${todo.text}`;
@@ -169,16 +172,18 @@ export function TodoItem({
         primaryActionDisabled = true;
         currentActionType = 'disabled';
     }
-  } else if (!todo.isDeleted && !isRedBorderPhase && !isStage1UndoActive) {
+  } else if (!todo.isDeleted && !isRedBorderPhase && !isStage1UndoActive) { // Normal active/completed task, not in deleted filter
     primaryActionIcon = <Trash2 size={16} />;
     primaryActionLabel = `Delete task: ${todo.text}`;
     primaryActionTitle = `Delete task`;
     onPrimaryAction = () => onRemove(todo.id);
     currentActionType = 'initial-delete';
-  } else {
-    primaryActionIcon = <Trash2 size={16} />;
-    primaryActionLabel = `No action`;
-    primaryActionTitle = `No action available`;
+  } else { 
+    // Hide action button if it's a deleted item shown outside the deleted filter (e.g. during yellow border phase in 'all')
+    // or if no other condition matches.
+    primaryActionIcon = <div />;
+    primaryActionLabel = 'No action';
+    primaryActionTitle = 'No action available in this state/filter';
     onPrimaryAction = () => {};
     primaryActionDisabled = true;
     currentActionType = 'disabled';
@@ -247,10 +252,10 @@ export function TodoItem({
             todo={todo}
             undoableAction={undoableAction}
             onUndo={isStage1UndoActive && onUndo ? () => onUndo(todo.id) : undefined}
-            onRestorePendingDeletion={isRedBorderPhase && onRestorePendingDeletion ? () => onRestorePendingDeletion(todo.id) : undefined}
+            onRestorePendingDeletion={isRedBorderPhase && onRestorePendingDeletion && currentFilter === 'deleted' ? () => onRestorePendingDeletion(todo.id) : undefined}
             currentTime={currentTime}
             undoTimeoutDuration={undoTimeoutDuration}
-            filterSwitchDelay={FILTER_SWITCH_DELAY} // Added this prop back
+            filterSwitchDelay={FILTER_SWITCH_DELAY}
             stage2GracePeriodDuration={STAGE_2_GRACE_PERIOD_DURATION}
             isYellowBorderPhase={isYellowBorderPhase}
             yellowBorderCountdown={yellowBorderCountdown}

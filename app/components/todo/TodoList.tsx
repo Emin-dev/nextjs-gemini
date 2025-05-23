@@ -1,19 +1,20 @@
 'use client';
 
 import { TodoItem } from './TodoItem';
-import type { Todo, UndoableActionDetails, EmptyingTrashBatchDetails } from '../../types';
+import type { Todo, UndoableActionDetails, EmptyingTrashBatchDetails, FilterValue } from '../../types'; // Added FilterValue
 
 interface TodoListProps {
   todos: Todo[];
   onToggle: (id: number) => void;
-  onRemove: (id: number) => void; // Initial delete (yellow border)
+  onRemove: (id: number) => void; 
   onUpdateText: (id: number, newText: string) => void;
-  undoableActions: Map<number, UndoableActionDetails>; // For initial soft delete
-  onUndo: (id: number) => void; // Handles undo for initial soft delete
+  undoableActions: Map<number, UndoableActionDetails>; 
+  onUndo: (id: number) => void; 
   undoTimeoutDuration: number;
-  onRestorePendingDeletion?: (id: number) => void; // For undoing a red-border item
-  currentTime: number; // Changed from optional to required number
-  emptyingTrashBatch: EmptyingTrashBatchDetails | null; // To know if a task is part of the current batch
+  onRestorePendingDeletion?: (id: number) => void; 
+  currentTime: number; 
+  emptyingTrashBatch: EmptyingTrashBatchDetails | null; 
+  currentFilter: FilterValue; // Added currentFilter
 }
 
 export function TodoList({ 
@@ -26,7 +27,8 @@ export function TodoList({
   undoTimeoutDuration,
   onRestorePendingDeletion,
   currentTime,
-  emptyingTrashBatch
+  emptyingTrashBatch,
+  currentFilter // Added currentFilter
 }: TodoListProps) {
 
   return (
@@ -46,6 +48,7 @@ export function TodoList({
             onRestorePendingDeletion={onRestorePendingDeletion}
             currentTime={currentTime}
             emptyingTrashBatch={emptyingTrashBatch}
+            currentFilter={currentFilter} // Pass currentFilter to TodoItem
           />
         );
       })}

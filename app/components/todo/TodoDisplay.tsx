@@ -18,7 +18,7 @@ interface TodoDisplayProps {
   inputRef: RefObject<HTMLInputElement | null>;
   checkboxId: string;
   labelId: string;
-  isInteractive: boolean;
+  isInteractive: boolean; // This prop might need re-evaluation or can be removed if not used for Input disabling
   isUndoOrDeletionPhaseActive: boolean;
 }
 
@@ -35,11 +35,11 @@ export function TodoDisplay({
   inputRef,
   checkboxId,
   labelId,
-  isInteractive,
+  // isInteractive, // No longer directly used to disable the input when isEditing is true
   isUndoOrDeletionPhaseActive
 }: TodoDisplayProps) {
 
-  const isDisabled = !isInteractive || todo.isDeleted || !!todo.markedForDeletionAt || !!todo.pendingFinalDeletionTimestamp;
+  const isDisabled = !isEditing && (isUndoOrDeletionPhaseActive || todo.isDeleted || !!todo.markedForDeletionAt || !!todo.pendingFinalDeletionTimestamp);
 
   return (
     <div className="flex items-center mb-1">
@@ -49,7 +49,7 @@ export function TodoDisplay({
         onCheckedChange={onToggleCompletion}
         className="mr-2 sm:mr-3 border-slate-500 data-[state=checked]:bg-sky-600 data-[state=checked]:border-sky-600 flex-shrink-0 h-5 w-5 focus:ring-sky-500 focus:ring-offset-slate-800"
         aria-label={todo.completed ? `Mark task "${todo.text}" as incomplete` : `Mark task "${todo.text}" as complete`}
-        disabled={isDisabled}
+        disabled={isDisabled} // Checkbox is disabled if not interactive OR during deletion phases
       />
       {isEditing ? (
         <Input
@@ -60,7 +60,7 @@ export function TodoDisplay({
           onBlur={onSaveEdit}
           onKeyDown={onInputKeyDown}
           className="flex-grow bg-slate-600 border-slate-500 text-white h-9 text-sm sm:text-base p-2 rounded focus:ring-sky-500 focus:border-sky-500"
-          disabled={!isInteractive} // Editing itself is controlled by isInteractive
+          disabled={false} // Input is enabled when isEditing is true. Other logic prevents starting edit.
           aria-label={`Edit text for task: ${todo.text}`}
           id={labelId} 
         />
