@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, KeyboardEvent, useRef, useImperativeHandle, forwardRef } from 'react';
+import { useState, KeyboardEvent, useRef, useImperativeHandle, forwardRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -23,13 +23,23 @@ export const TodoAddForm = forwardRef<TodoAddFormHandle, TodoAddFormProps>(({ on
     }
   }));
 
+  // Focus the input field whenever the component mounts or the disabled state changes to false
+  useEffect(() => {
+    if (!disabled) {
+      inputRef.current?.focus();
+    }
+  }, [disabled]);
+
   const handleSubmit = () => {
     if (disabled) return; // Prevent submission if disabled
     const trimmedText = newTodoText.trim();
     if (trimmedText === '') return;
     onAddTodo(trimmedText);
     setNewTodoText('');
-    // No need to focus here, parent will handle it
+    // Ensure focus is returned to the input after adding a task
+    if (!disabled) {
+      inputRef.current?.focus();
+    }
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {

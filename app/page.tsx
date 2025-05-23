@@ -89,20 +89,26 @@ export default function Home() {
     }
   }, [todos, isClient, initialLoadComplete]);
 
-  const clearSpecificUndoAction = useCallback((id: number, showConfirmation: boolean = false, confirmationMessage?: string) => {
+  const clearSpecificUndoAction = useCallback((id: number, showConfirmation: boolean = false, confirmationMessage?: string, autoSwitchToDeletedFilter?: boolean) => {
     const timer = undoTimeoutRefs.current.get(id);
     if (timer) clearTimeout(timer);
     undoTimeoutRefs.current.delete(id);
+    let actionDetailsToReturn: UndoableActionDetails | undefined;
     setUndoableActions(prev => {
       const newState = new Map(prev);
-      const actionDetails = newState.get(id);
-      const originalTodoText = actionDetails?.originalTodo?.text ? actionDetails.originalTodo.text.substring(0,20) + '...' : 'task';
-      if (newState.delete(id) && showConfirmation && actionDetails) {
+      actionDetailsToReturn = newState.get(id);
+      const originalTodoText = actionDetailsToReturn?.originalTodo?.text ? actionDetailsToReturn.originalTodo.text.substring(0,20) + '...' : 'task';
+      if (newState.delete(id) && showConfirmation && actionDetailsToReturn) {
         const finalMessage = confirmationMessage || `Action on "${originalTodoText}" confirmed.`;
         showStatusMessage(finalMessage);
       }
       return newState;
     });
+    if (autoSwitchToDeletedFilter && actionDetailsToReturn?.actionType === 'delete') {
+      setFilter('deleted');
+      setSearchQuery(''); // Clear search when switching to deleted filter
+    }
+    return actionDetailsToReturn;
   }, [showStatusMessage]);
 
   const addTodo = useCallback((text: string) => {
@@ -165,37 +171,45 @@ export default function Home() {
       showStatusMessage("Task is pending final deletion. Use 'Undo' from the task options to cancel this.");
       return;
     }
-    clearSpecificUndoAction(id);
+    clearSpecificUndoAction(id); // Clear any existing undo action for this item
     const newIsDeleted = !todoToModify.isDeleted;
     const actionType = newIsDeleted ? 'delete' : 'restore';
-    const originalTodoForUndo: Todo = { ...todoToModify };
+    const originalTodoForUndo: Todo = { ...todoToModify }; // Snapshot before change
 
+    // Update the todo's state immediately
     setTodos(prev => prev.map(t => t.id === id ? { ...t, isDeleted: newIsDeleted, completed: newIsDeleted ? t.completed : false } : t));
     
+    // Set up the undo action
     setUndoableActions(prev => {
       const newState = new Map(prev);
       newState.set(id, { id, originalTodo: originalTodoForUndo, actionType, timestamp: Date.now() });
       return newState;
     });
+
+    // Set a timer to auto-confirm the action and potentially switch filter
     const timer = setTimeout(() => {
-      // It's important to get the latest undoableActions from state if multiple rapid actions occur
-      // However, for the text message, using todoToModify.text or actionDetails.originalTodo.text is fine.
-      const currentActionDetails = undoableActions.get(id) ?? { originalTodo: todoToModify, actionType }; // Fallback
-      const textForMessage = currentActionDetails.originalTodo.text;
-      clearSpecificUndoAction(id, true, `Task "${textForMessage.substring(0, 20)}..." ${actionType} auto-confirmed.`);
+      const actionDetails = clearSpecificUndoAction(id, true, `Task "${originalTodoForUndo.text.substring(0, 20)}..." ${actionType} auto-confirmed.`, actionType === 'delete');
+       // If it was a delete action that just got auto-confirmed, and the user hasn't undone it,
+      // and the current filter is not already 'deleted', then switch to 'deleted' filter.
+      if (actionDetails && actionDetails.actionType === 'delete') {
+          // Check current filter *after* clearSpecificUndoAction (which might have already switched it if autoSwitch was true and it was a delete)
+          // This additional check ensures we only switch if not already on 'deleted' or if clearSpecificUndoAction didn't switch it for some reason.
+          // The main auto-switch is now handled by clearSpecificUndoAction directly.
+      }
     }, UNDO_TIMEOUT);
     undoTimeoutRefs.current.set(id, timer);
-    showStatusMessage(`Task "${todoToModify.text.substring(0, 20)}..." marked for ${actionType}. You have ${UNDO_TIMEOUT/1000}s to undo.`);
+
+    showStatusMessage(`Task "${originalTodoForUndo.text.substring(0, 20)}..." marked for ${actionType}. You have ${UNDO_TIMEOUT/1000}s to undo.`);
     focusInput();
     resetInactivityTimer();
-  }, [todos, undoableActions, clearSpecificUndoAction, focusInput, resetInactivityTimer, showStatusMessage]);
+  }, [todos, clearSpecificUndoAction, focusInput, resetInactivityTimer, showStatusMessage]);
 
   const handleUndo = useCallback((idToUndo: number) => {
     const actionDetails = undoableActions.get(idToUndo);
     if (!actionDetails) return;
     setTodos(prev => prev.map(todo => todo.id === idToUndo ? { ...actionDetails.originalTodo } : todo));
     showStatusMessage(`Task "${actionDetails.originalTodo.text.substring(0, 20)}..." ${actionDetails.actionType === 'delete' ? 'restoration' : 'deletion'} undone.`);
-    clearSpecificUndoAction(idToUndo);
+    clearSpecificUndoAction(idToUndo, false); // Don't show confirmation for undo itself, don't auto-switch filter
     focusInput(); 
     resetInactivityTimer();
   }, [undoableActions, clearSpecificUndoAction, focusInput, resetInactivityTimer, showStatusMessage]);
@@ -348,37 +362,30 @@ export default function Home() {
     return todos.filter(todo => {
       const isInUndoStage1 = undoableActions.has(todo.id);
       const isInGraceStage2 = !!todo.pendingFinalDeletionTimestamp;
+      const actionDetails = isInUndoStage1 ? undoableActions.get(todo.id) : undefined; // Define actionDetails here
 
       let isVisible = false;
       switch (filter) {
         case 'all':
-          // Show if not explicitly marked as deleted AND not in Stage 2 (grace period for final deletion).
-          // A task in Stage 1 undo (soft-deleted) will have todo.isDeleted = true, so it's excluded here.
-          isVisible = !todo.isDeleted && !isInGraceStage2;
+          isVisible = !todo.isDeleted && !isInGraceStage2 || (actionDetails?.actionType === 'restore');
           break;
         case 'active':
-          // Show if not completed, not explicitly marked as deleted, AND not in Stage 2.
-          isVisible = !todo.completed && !todo.isDeleted && !isInGraceStage2;
+          isVisible = (!todo.completed && !todo.isDeleted && !isInGraceStage2) || 
+                      (actionDetails?.actionType === 'restore' && !actionDetails.originalTodo.completed);
           break;
         case 'completed':
-          // Show if completed, not explicitly marked as deleted, AND not in Stage 2.
-          isVisible = todo.completed && !todo.isDeleted && !isInGraceStage2;
+          isVisible = (todo.completed && !todo.isDeleted && !isInGraceStage2) || 
+                      (actionDetails?.actionType === 'restore' && actionDetails.originalTodo.completed);
           break;
         case 'deleted':
-          // Show if: 
-          // 1. Explicitly marked as deleted AND NOT currently in Stage 1 undo (i.e., it's a confirmed soft-delete).
-          // OR 2. In Stage 2 grace period (pending final deletion).
-          // OR 3. Currently in Stage 1 undo for a 'delete' action.
-          isVisible = (todo.isDeleted && !isInUndoStage1) || isInGraceStage2 || (isInUndoStage1 && undoableActions.get(todo.id)?.actionType === 'delete');
+          isVisible = (todo.isDeleted && !isInUndoStage1) || isInGraceStage2 || (actionDetails?.actionType === 'delete');
           break;
         default:
-          // Should not be reached if FilterValue is strictly adhered to.
           isVisible = true; 
       }
 
       if (!isVisible) return false;
 
-      // Apply search query if visibility criteria met
       if (searchQuery.trim() !== '') {
         return todo.text.toLowerCase().includes(searchQuery.toLowerCase());
       }

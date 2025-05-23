@@ -119,6 +119,9 @@
   body {
     @apply bg-background text-foreground;
   }
+  img {
+    @apply w-[6.16rem] h-[6.16rem]; /* Updated size */
+  }
 }
 
 /* Hide Firebase/Google injected promotional banners */

@@ -2,7 +2,7 @@
 
 import Image from 'next/image';
 import { Card, CardContent } from "@/components/ui/card";
-import { useRef } from 'react'; 
+import { useRef, MouseEvent } from 'react'; 
 import type { Todo, UndoableActionDetails } from '../../types';
 
 import { useSaveFeedback } from '../../hooks/useSaveFeedback';
@@ -74,9 +74,23 @@ export function TodoItem({
   const isInteractive = !isUndoOrGraceActive;
 
   const handleToggleCompletion = () => {
-    if (!isInteractive || todo.isDeleted) return;
+    if (!isInteractive || todo.isDeleted || isEditing) return; // Also prevent toggle if editing
     onToggle(todo.id);
   }
+
+  const handleCardClick = (event: MouseEvent<HTMLDivElement>) => {
+    if (!isInteractive || todo.isDeleted || isEditing) return;
+
+    // Prevent toggle if click originated from a button, input, or any element with a role (e.g. checkbox)
+    let target = event.target as HTMLElement;
+    while (target && target !== event.currentTarget) {
+      if (target.tagName === 'BUTTON' || target.tagName === 'INPUT' || target.getAttribute('role') === 'checkbox' || target.closest('[data-no-toggle]')) {
+        return;
+      }
+      target = target.parentElement as HTMLElement;
+    }
+    handleToggleCompletion();
+  };
 
   const checkboxId = `todo-item-checkbox-${todo.id}`;
   const labelId = `todo-item-label-${todo.id}`;
@@ -92,7 +106,8 @@ export function TodoItem({
     isStage1UndoActive ? 'opacity-90 ring-2 ring-yellow-400 ring-offset-2 ring-offset-slate-800 animate-pulseSlow' : '',
     isStage2GraceActive ? 'opacity-90 ring-2 ring-red-500 ring-offset-2 ring-offset-slate-800 animate-pulse' : '',
     justSaved && isInteractive ? 'border-sky-500 shadow-sky-md' : 'border-slate-600',
-  ].join(' ');
+    isInteractive && !todo.isDeleted && !isEditing ? 'cursor-pointer' : '', // Add cursor-pointer when interactive
+  ].filter(Boolean).join(' ');
 
   const showEditButton = !isEditing && !todo.isDeleted && isInteractive;
   const showMainActionButtons = !isUndoOrGraceActive;
@@ -116,19 +131,20 @@ export function TodoItem({
     <li 
       ref={itemRef}
       aria-labelledby={labelId}
-      tabIndex={-1}
+      tabIndex={-1} // The card itself will handle focus and click for toggling
       className="list-none w-full flex"
     >
-      <Card className={cardClasses}> {/* Corrected this line */}
-        <CardContent className="p-3 sm:p-4 flex flex-col gap-2 sm:gap-3">
-          <div className="flex items-center justify-between gap-2 sm:gap-3">
+      <Card className={cardClasses} onClick={handleCardClick}>
+        <CardContent className="p-2 sm:p-3 flex flex-col gap-1 sm:gap-2"> 
+          <div className="flex items-center justify-between gap-1 sm:gap-2"> 
             <Image
-              src={`https://picsum.photos/seed/${todo.id}/60`}
+              src={`https://picsum.photos/seed/${todo.id}/600`}
               alt={`Task image for: ${todo.text}`}
-              width={60}
-              height={60}
-              className="rounded-md mr-3 sm:mr-4 flex-shrink-0 object-cover"
+              width={600}
+              height={600}
+              className="rounded-md mr-2 sm:mr-3 flex-shrink-0 object-cover" 
               priority={false}
+              data-no-toggle // Prevent card click from triggering toggle when image is clicked (optional, but can be useful)
             />
             <div className="flex flex-col flex-grow min-w-0">
               <TodoDisplay
@@ -138,7 +154,7 @@ export function TodoItem({
                 isEditing={isEditing}
                 editText={editText}
                 onEditTextChange={setEditText}
-                onToggleCompletion={handleToggleCompletion}
+                onToggleCompletion={handleToggleCompletion} // Still passed to TodoDisplay for the checkbox itself
                 onSaveEdit={handleSave}
                 onInputKeyDown={handleInputKeyDown}
                 onLabelDoubleClick={startEditing}
@@ -156,6 +172,7 @@ export function TodoItem({
                 isUndoOrGraceActive={isUndoOrGraceActive}
               />
             </div>
+            {/* TodoActions contains buttons, so clicks within it should not toggle the task by default due to the check in handleCardClick */}
             <TodoActions
               todoText={todo.text}
               isInteractive={isInteractive}
