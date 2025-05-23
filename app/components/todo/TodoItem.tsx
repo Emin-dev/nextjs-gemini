@@ -25,8 +25,7 @@ interface TodoItemProps {
   undoableAction: UndoableActionDetails | null; // For Stage 1
   onUndo: (id: number) => void; // For Stage 1
   undoTimeoutDuration: number; // For Stage 1
-  // New props for Stage 2 grace period
-  onRestoreDuringGracePeriod?: (id: number) => void;
+  onRestoreDuringGracePeriod?: (id: number) => void; // Renamed to onUndoPendingFinalDeletion in page.tsx
   currentTime?: number;
 }
 
@@ -63,7 +62,7 @@ export function TodoItem({
   undoableAction, 
   onUndo, 
   undoTimeoutDuration,
-  onRestoreDuringGracePeriod,
+  onRestoreDuringGracePeriod, // This prop name is kept for now, but maps to onUndoPendingFinalDeletion
   currentTime
 }: TodoItemProps) {
   const [isEditing, setIsEditing] = useState(false);
@@ -80,7 +79,6 @@ export function TodoItem({
   const isStage1UndoActive = undoableAction?.id === todo.id && undoableAction?.actionType === 'delete';
   const isStage2GraceActive = !!(todo.isDeleted && todo.pendingFinalDeletionTimestamp && currentTime && currentTime < todo.pendingFinalDeletionTimestamp && onRestoreDuringGracePeriod);
 
-  // Effect for Stage 1 Undo Countdown
   useEffect(() => {
     if (isStage1UndoActive) {
       setStage1UndoCountdown(Math.ceil(undoTimeoutDuration / 1000));
@@ -93,12 +91,10 @@ export function TodoItem({
     }
   }, [isStage1UndoActive, undoTimeoutDuration]);
 
-  // Effect for Stage 2 Grace Period Countdown
   useEffect(() => {
     if (isStage2GraceActive && todo.pendingFinalDeletionTimestamp && currentTime) {
       const timeLeft = Math.max(0, Math.ceil((todo.pendingFinalDeletionTimestamp - currentTime) / 1000));
       setStage2GraceCountdown(timeLeft);
-      // No interval needed here as currentTime prop updates will trigger re-renders and re-calculation
     } else {
       setStage2GraceCountdown(0);
     }
@@ -119,7 +115,7 @@ export function TodoItem({
 
   useEffect(() => {
     if (prevTodoText.current !== todo.text || prevTodoCompleted.current !== todo.completed) {
-      if (prevTodoText.current !== undefined || prevTodoCompleted.current !== undefined) { // Avoid on initial mount
+      if (prevTodoText.current !== undefined || prevTodoCompleted.current !== undefined) { 
         setJustSaved(true);
         const timer = setTimeout(() => setJustSaved(false), SAVE_FEEDBACK_DURATION);
         prevTodoText.current = todo.text;
@@ -127,14 +123,14 @@ export function TodoItem({
         return () => clearTimeout(timer);
       }
     }
-    prevTodoText.current = todo.text; // Ensure refs are set on first render too
+    prevTodoText.current = todo.text; 
     prevTodoCompleted.current = todo.completed;
   }, [todo.text, todo.completed]);
 
   const isInteractive = !isStage1UndoActive && !isStage2GraceActive;
 
   const handleToggle = () => {
-    if (!isInteractive) return;
+    if (!isInteractive || todo.isDeleted) return; // Cannot toggle if deleted
     onToggle(todo.id);
   }
 
@@ -143,7 +139,7 @@ export function TodoItem({
     const trimmedText = editText.trim();
     setIsEditing(false);
     if (trimmedText === '') {
-      onRemove(todo.id); // Will trigger Stage 1 soft delete
+      onRemove(todo.id); 
     } else if (trimmedText !== todo.text) {
       onUpdateText(todo.id, trimmedText);
     } 
@@ -173,14 +169,13 @@ export function TodoItem({
     'hover:shadow-lg',
     'focus-within:shadow-lg focus-within:ring-2 focus-within:ring-sky-500 focus-within:ring-offset-2 focus-within:ring-offset-slate-800',
     'transition-all duration-300',
-    (todo.isDeleted && !isStage1UndoActive && !isStage2GraceActive) ? 'opacity-60' : '',
-    isStage1UndoActive ? 'opacity-80 ring-2 ring-yellow-500 ring-offset-2 ring-offset-slate-800 animate-pulseSlow' : '',
-    isStage2GraceActive ? 'opacity-80 ring-2 ring-red-600 ring-offset-2 ring-offset-slate-800 animate-pulse' : '',
+    (todo.isDeleted && !isStage1UndoActive && !isStage2GraceActive) ? 'opacity-70' : '',
+    isStage1UndoActive ? 'opacity-90 ring-2 ring-yellow-400 ring-offset-2 ring-offset-slate-800 animate-pulseSlow' : '',
+    isStage2GraceActive ? 'opacity-90 ring-2 ring-red-500 ring-offset-2 ring-offset-slate-800 animate-pulse' : '',
     justSaved && isInteractive ? 'border-sky-500 shadow-sky-md' : 'border-slate-600',
   ].join(' ');
 
   const showEditButton = !isEditing && !todo.isDeleted && isInteractive;
-  // Main action button visibility (delete/restore)
   const showMainActionButtons = !isStage1UndoActive && !isStage2GraceActive;
 
   return (
@@ -196,7 +191,7 @@ export function TodoItem({
           <div className="flex items-center flex-grow min-w-0">
             <Image
               src={`https://picsum.photos/seed/${todo.id}/60`}
-              alt={todo.isDeleted ? `Task image: ${todo.text}` : `Task image: ${todo.text}`}
+              alt={`Task image for: ${todo.text}`}
               width={60}
               height={60}
               className="rounded-md mr-3 sm:mr-4 flex-shrink-0 object-cover"
@@ -230,7 +225,7 @@ export function TodoItem({
                     id={labelId}
                     htmlFor={isInteractive && !todo.isDeleted ? checkboxId : undefined}
                     className={`text-slate-200 text-base sm:text-lg truncate 
-                      ${todo.completed && !isStage1UndoActive && !isStage2GraceActive ? 'line-through text-slate-400' : ''} 
+                      ${todo.completed && !todo.isDeleted && !isStage1UndoActive && !isStage2GraceActive ? 'line-through text-slate-400' : ''} 
                       ${(!isInteractive || todo.isDeleted) ? 'text-slate-500 cursor-not-allowed' : 'cursor-pointer hover:text-slate-100'}`}
                     onDoubleClick={handleLabelDoubleClick}
                     onKeyDown={handleLabelKeyDown}
@@ -258,7 +253,7 @@ export function TodoItem({
             )}
             {showMainActionButtons && (
                 <Button
-                  onClick={() => onRemove(todo.id)} // Handles soft-delete or restore from soft-delete
+                  onClick={() => onRemove(todo.id)} 
                   variant="ghost"
                   size="icon"
                   className={`p-1.5 h-auto w-auto focus:ring-offset-slate-800 
@@ -274,32 +269,32 @@ export function TodoItem({
         </div>
 
         {isStage1UndoActive && (
-          <div className="mt-2 p-2 sm:p-3 bg-yellow-900/70 border border-yellow-700 rounded-md flex justify-between items-center animate-pulseSlow">
-            <p className="text-xs sm:text-sm text-yellow-200">
+          <div className="mt-2 p-2.5 sm:p-3 bg-yellow-500/90 border border-yellow-400 rounded-md flex justify-between items-center animate-pulseSlow">
+            <p className="text-sm sm:text-base font-bold text-black">
               Marked for deletion. Undoing in {stage1UndoCountdown}s...
             </p>
             <Button 
               onClick={() => onUndo(todo.id)} 
-              variant="outline"
+              variant="default"
               size="sm"
-              className="text-yellow-100 border-yellow-400 hover:bg-yellow-700 hover:text-yellow-50 focus:ring-yellow-500 text-xs sm:text-sm px-2 py-1 h-auto"
+              className="bg-yellow-300 hover:bg-yellow-200 text-black font-bold text-sm sm:text-base px-3 py-1.5 h-auto focus:ring-yellow-400 focus:ring-offset-yellow-500"
             >
               Undo Delete
             </Button>
           </div>
         )}
         {isStage2GraceActive && onRestoreDuringGracePeriod && (
-          <div className="mt-2 p-2 sm:p-3 bg-red-900/80 border border-red-700 rounded-md flex justify-between items-center animate-pulse">
-            <p className="text-xs sm:text-sm text-red-200">
-              Final deletion in {stage2GraceCountdown}s (Batch: {todo.batchId?.substring(6)})...
+          <div className="mt-2 p-2.5 sm:p-3 bg-red-600/90 border border-red-500 rounded-md flex justify-between items-center animate-pulse">
+            <p className="text-sm sm:text-base font-bold text-white">
+              Pending final deletion. Undo in {stage2GraceCountdown}s...
             </p>
             <Button 
               onClick={() => onRestoreDuringGracePeriod(todo.id)} 
-              variant="outline"
+              variant="default"
               size="sm"
-              className="text-red-100 border-red-400 hover:bg-red-700 hover:text-red-50 focus:ring-red-500 text-xs sm:text-sm px-2 py-1 h-auto"
+              className="bg-red-400 hover:bg-red-300 text-white font-bold text-sm sm:text-base px-3 py-1.5 h-auto focus:ring-red-500 focus:ring-offset-red-600"
             >
-              Restore Task
+              Undo
             </Button>
           </div>
         )}

@@ -16,11 +16,11 @@ const LOCAL_STORAGE_KEY = 'nextjs-todo-app-todos';
 type FilterValue = 'all' | 'active' | 'completed' | 'deleted';
 
 // Durations
-const INACTIVITY_TIMEOUT = 5 * 60 * 1000; // 5 minutes for inactivity to focus input
+const INACTIVITY_TIMEOUT = 3000; // 3 seconds for inactivity to focus input
 const UNDO_TIMEOUT = 20000; // 20 seconds for Stage 1 Undo
 const STATUS_MESSAGE_DURATION = 3000; // 3 seconds for general status messages
 const STAGE_2_GRACE_PERIOD_DURATION = 60000; // 1 minute for Stage 2 individual restore
-const STAGE_4_GLOBAL_RESTORE_WINDOW = 2 * 60 * 1000; // 2 minutes for Stage 4 global restore window
+const STAGE_4_GLOBAL_RESTORE_WINDOW = 5 * 60 * 1000; // 5 minutes for Stage 4 global restore window
 const AUTO_FINAL_DELETE_INTERVAL = 5000; // Check every 5 seconds for Stage 3 auto-deletion
 const CURRENT_TIME_UPDATE_INTERVAL = 1000; // Update current time every second for countdowns
 
@@ -46,53 +46,36 @@ export default function Home() {
   const [statusMessage, setStatusMessage] = useState<string>('');
   const [currentTime, setCurrentTime] = useState<number>(Date.now());
 
-  // Refs for managing timeouts, intervals, and complex state to avoid stale closures
   const todoAddFormRef = useRef<TodoAddFormHandle>(null);
   const inactivityTimerRef = useRef<NodeJS.Timeout | null>(null);
   const statusMessageTimerRef = useRef<NodeJS.Timeout | null>(null);
   const autoFinalDeleteIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const globalRestoreWindowTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Stage 1: Soft Delete Undo Actions
   const [undoableActions, setUndoableActions] = useState<Map<number, UndoableActionDetails>>(new Map());
   const undoTimeoutRefs = useRef<Map<number, NodeJS.Timeout>>(new Map());
-
-  // Stage 2 & 4: Emptying Trash Batch
   const [emptyingTrashBatch, setEmptyingTrashBatch] = useState<EmptyingTrashBatchDetails | null>(null);
   const emptyingTrashBatchRef = useRef<EmptyingTrashBatchDetails | null>(null);
+
   useEffect(() => {
     emptyingTrashBatchRef.current = emptyingTrashBatch;
   }, [emptyingTrashBatch]);
 
-  const focusInput = useCallback(() => todoAddFormRef.current?.focusInput(), []);
-
-  const showStatusMessage = useCallback((message: string) => {
-    if (statusMessageTimerRef.current) clearTimeout(statusMessageTimerRef.current);
-    setStatusMessage(message);
-    statusMessageTimerRef.current = setTimeout(() => setStatusMessage(''), STATUS_MESSAGE_DURATION);
+  const focusInput = useCallback(() => {
+    todoAddFormRef.current?.focusInput();
   }, []);
-
-  const clearSpecificUndoAction = useCallback((id: number, showConfirmation: boolean = false, confirmationMessage?: string) => {
-    const timer = undoTimeoutRefs.current.get(id);
-    if (timer) clearTimeout(timer);
-    undoTimeoutRefs.current.delete(id);
-    setUndoableActions(prev => {
-      const newState = new Map(prev);
-      const actionDetails = newState.get(id);
-      if (newState.delete(id) && showConfirmation && actionDetails) {
-        const finalMessage = confirmationMessage || `Task "${actionDetails.originalTodo.text.substring(0,20)}..." ${actionDetails.actionType === 'delete' ? 'deletion' : 'restoration'} confirmed.`;
-        showStatusMessage(finalMessage);
-      }
-      return newState;
-    });
-  }, [showStatusMessage]);
 
   const resetInactivityTimer = useCallback(() => {
     if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
     inactivityTimerRef.current = setTimeout(focusInput, INACTIVITY_TIMEOUT);
   }, [focusInput]);
 
-  // Effect for initial load and global event listeners
+  const showStatusMessage = useCallback((message: string) => {
+    if (statusMessageTimerRef.current) clearTimeout(statusMessageTimerRef.current);
+    setStatusMessage(message);
+    statusMessageTimerRef.current = setTimeout(() => setStatusMessage(''), STATUS_MESSAGE_DURATION);
+    resetInactivityTimer(); 
+  }, [resetInactivityTimer]);
+
   useEffect(() => {
     setIsClient(true);
     try {
@@ -100,13 +83,10 @@ export default function Home() {
       if (storedTodos) setTodos(JSON.parse(storedTodos).map((todo: any) => ({ ...todo, isDeleted: todo.isDeleted || false, pendingFinalDeletionTimestamp: todo.pendingFinalDeletionTimestamp || null, batchId: todo.batchId || null })));
     } catch (error) { console.error("Error parsing todos from localStorage:", error); }
     setInitialLoadComplete(true);
-
     window.addEventListener('mousemove', resetInactivityTimer);
     window.addEventListener('keydown', resetInactivityTimer);
-    resetInactivityTimer();
-
+    resetInactivityTimer(); 
     const timeUpdateInterval = setInterval(() => setCurrentTime(Date.now()), CURRENT_TIME_UPDATE_INTERVAL);
-
     return () => {
       window.removeEventListener('mousemove', resetInactivityTimer);
       window.removeEventListener('keydown', resetInactivityTimer);
@@ -119,36 +99,47 @@ export default function Home() {
     };
   }, [resetInactivityTimer]);
 
-  // Effect for saving todos to localStorage
   useEffect(() => {
     if (isClient && initialLoadComplete) {
       localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(todos));
     }
   }, [todos, isClient, initialLoadComplete]);
 
-  // Task 1: Add Todo
+  const clearSpecificUndoAction = useCallback((id: number, showConfirmation: boolean = false, confirmationMessage?: string) => {
+    const timer = undoTimeoutRefs.current.get(id);
+    if (timer) clearTimeout(timer);
+    undoTimeoutRefs.current.delete(id);
+    setUndoableActions(prev => {
+      const newState = new Map(prev);
+      const actionDetails = newState.get(id);
+      if (newState.delete(id) && showConfirmation && actionDetails) {
+        const finalMessage = confirmationMessage || `Action on "${actionDetails.originalTodo.text.substring(0,20)}..." confirmed.`;
+        showStatusMessage(finalMessage);
+      }
+      return newState;
+    });
+  }, [showStatusMessage]);
+
   const addTodo = (text: string) => {
     const newTodo: Todo = { id: Date.now(), text, completed: false, isDeleted: false, pendingFinalDeletionTimestamp: null, batchId: null };
     setTodos(prev => [...prev, newTodo]);
     if (filter !== 'all') setFilter('all');
     setSearchQuery('');
     showStatusMessage(`Task "${text.substring(0, 20)}..." added.`);
-    focusInput();
+    focusInput(); 
     resetInactivityTimer();
   };
 
-  // Task 2: Toggle Todo Completion
   const toggleTodo = (id: number) => {
-    clearSpecificUndoAction(id); // Clear Stage 1 undo if active
-    // Cannot toggle if task is part of an active emptying trash batch
-    if (emptyingTrashBatch?.taskIds.includes(id)) {
+    clearSpecificUndoAction(id);
+    if (emptyingTrashBatchRef.current?.taskIds.includes(id)) {
         showStatusMessage("Cannot modify task during batch deletion process.");
         return;
     }
     let taskText = '';
     let newCompletedStatus = false;
     setTodos(prev => prev.map(todo => {
-      if (todo.id === id && !todo.pendingFinalDeletionTimestamp) { // Can only toggle if not in Stage 2 grace period
+      if (todo.id === id && !todo.pendingFinalDeletionTimestamp && !todo.isDeleted) {
         taskText = todo.text;
         newCompletedStatus = !todo.completed;
         return { ...todo, completed: newCompletedStatus };
@@ -156,21 +147,20 @@ export default function Home() {
       return todo;
     }));
     if (taskText) {
-        showStatusMessage(`Task "${taskText.substring(0, 20)}..." marked as ${newCompletedStatus ? 'complete' : 'incomplete'}.`);
+        showStatusMessage(`Task "${taskText.substring(0, 20)}..." marked as ${newCompletedStatus ? 'complete' : 'active'}.`);
     }
     resetInactivityTimer();
   };
 
-  // Task 3: Update Todo Text
   const updateTodoText = (id: number, newText: string) => {
-    clearSpecificUndoAction(id); // Clear Stage 1 undo if active
-    if (emptyingTrashBatch?.taskIds.includes(id)) {
+    clearSpecificUndoAction(id);
+    if (emptyingTrashBatchRef.current?.taskIds.includes(id)) {
         showStatusMessage("Cannot modify task during batch deletion process.");
         return;
     }
     let oldText = '';
     setTodos(prev => prev.map(todo => {
-      if (todo.id === id && !todo.pendingFinalDeletionTimestamp) { // Can only update if not in Stage 2 grace period
+      if (todo.id === id && !todo.pendingFinalDeletionTimestamp && !todo.isDeleted) {
         oldText = todo.text;
         return { ...todo, text: newText };
       }
@@ -179,130 +169,110 @@ export default function Home() {
     if (oldText) {
         showStatusMessage(`Task "${oldText.substring(0, 20)}..." updated.`);
     }
-    focusInput();
+    focusInput(); 
     resetInactivityTimer();
   };
 
-  // Task 4: Soft Delete (Stage 1 Undo) / Restore Soft Deleted Task
   const softDeleteTodo = (id: number) => {
     const todoToModify = todos.find(t => t.id === id);
     if (!todoToModify) return;
-
-    // If task is in Stage 2 (pending final deletion), this action should not proceed via Stage 1 logic
     if (todoToModify.pendingFinalDeletionTimestamp) {
-      showStatusMessage("Task is already pending final deletion. Restore it from the grace period option.");
+      showStatusMessage("Task is pending final deletion. Use 'Undo' from the task options to cancel this.");
       return;
     }
-
-    clearSpecificUndoAction(id); // Clear any previous undo action for this ID
-
-    const newIsDeleted = !todoToModify.isDeleted; // Toggle soft delete state
+    clearSpecificUndoAction(id);
+    const newIsDeleted = !todoToModify.isDeleted;
     const actionType = newIsDeleted ? 'delete' : 'restore';
-
-    setTodos(prev => prev.map(t => t.id === id ? { ...t, isDeleted: newIsDeleted, completed: newIsDeleted ? t.completed : false } : t));
-
+    const newCompletedStatus = newIsDeleted ? todoToModify.completed : false;
+    setTodos(prev => prev.map(t => t.id === id ? { ...t, isDeleted: newIsDeleted, completed: newCompletedStatus } : t));
     setUndoableActions(prev => {
       const newState = new Map(prev);
       newState.set(id, { id, originalTodo: { ...todoToModify }, actionType });
       return newState;
     });
-
     const timer = setTimeout(() => {
       clearSpecificUndoAction(id, true, `Task "${todoToModify.text.substring(0, 20)}..." ${actionType} auto-confirmed.`);
     }, UNDO_TIMEOUT);
     undoTimeoutRefs.current.set(id, timer);
-
     showStatusMessage(`Task "${todoToModify.text.substring(0, 20)}..." marked for ${actionType}. You have ${UNDO_TIMEOUT/1000}s to undo.`);
     focusInput();
     resetInactivityTimer();
   };
 
-  // Task 5: Handle Undo for Stage 1
   const handleUndo = (idToUndo: number) => {
     const actionDetails = undoableActions.get(idToUndo);
     if (!actionDetails) return;
     setTodos(prev => prev.map(todo => todo.id === idToUndo ? { ...actionDetails.originalTodo } : todo));
     showStatusMessage(`Task "${actionDetails.originalTodo.text.substring(0, 20)}..." ${actionDetails.actionType === 'delete' ? 'restoration' : 'deletion'} undone.`);
     clearSpecificUndoAction(idToUndo);
+    focusInput(); 
     resetInactivityTimer();
   };
 
-  // Task 2.2: Initiate Empty Trash (Moves tasks to Stage 2)
   const initiateEmptyTrash = useCallback(() => {
     const targetTasks = todos.filter(todo => todo.isDeleted && !undoableActions.has(todo.id) && !todo.pendingFinalDeletionTimestamp);
     if (targetTasks.length === 0) {
       showStatusMessage("No tasks eligible for emptying from trash.");
       return;
     }
-
     const currentBatchId = `batch-${Date.now()}`;
-    const tasksSnapshot = JSON.parse(JSON.stringify(targetTasks)); // Deep copy
+    const tasksSnapshot = JSON.parse(JSON.stringify(targetTasks));
     const taskIdsInBatch = targetTasks.map(t => t.id);
-
     setTodos(prevTodos => prevTodos.map(todo => {
       if (taskIdsInBatch.includes(todo.id)) {
-        return { 
-          ...todo, 
-          pendingFinalDeletionTimestamp: Date.now() + STAGE_2_GRACE_PERIOD_DURATION, 
-          batchId: currentBatchId 
-        };
+        return { ...todo, pendingFinalDeletionTimestamp: Date.now() + STAGE_2_GRACE_PERIOD_DURATION, batchId: currentBatchId };
       }
       return todo;
     }));
+    setEmptyingTrashBatch({ batchId: currentBatchId, taskIds: taskIdsInBatch, initiatedAt: Date.now(), tasksSnapshot });
+    showStatusMessage(`${targetTasks.length} task(s) are now pending final deletion. You can undo this for the next ${STAGE_4_GLOBAL_RESTORE_WINDOW/(60*1000)} minutes.`);
+    focusInput(); 
+    resetInactivityTimer();
+  }, [todos, undoableActions, showStatusMessage, focusInput, resetInactivityTimer]);
 
-    const newEmptyingTrashBatch: EmptyingTrashBatchDetails = {
-      batchId: currentBatchId,
-      taskIds: taskIdsInBatch,
-      initiatedAt: Date.now(),
-      tasksSnapshot
-    };
-    setEmptyingTrashBatch(newEmptyingTrashBatch);
-    showStatusMessage(`${targetTasks.length} task(s) moved to final deletion queue. ${STAGE_2_GRACE_PERIOD_DURATION/1000}s grace period / ${STAGE_4_GLOBAL_RESTORE_WINDOW/(60*1000)} min global restore window.`);
-  }, [todos, showStatusMessage, undoableActions]);
-
-  // Task 2.3: Restore Task During Stage 2 Grace Period
-  const onRestoreDuringGracePeriod = useCallback((taskId: number) => {
-    setTodos(prevTodos => prevTodos.map(todo => {
-      if (todo.id === taskId && todo.pendingFinalDeletionTimestamp) {
-        showStatusMessage(`Task "${todo.text.substring(0,20)}..." restored from grace period.`);
-        return { ...todo, isDeleted: false, completed: false, pendingFinalDeletionTimestamp: null, batchId: null }; 
-      }
-      return todo;
-    }));
-    // Check if this was the last task in the current batch
-    if (emptyingTrashBatchRef.current) {
-        const remainingTasksInBatch = todos.filter(t => 
-            emptyingTrashBatchRef.current?.taskIds.includes(t.id) && 
-            t.id !== taskId && 
-            t.pendingFinalDeletionTimestamp && 
-            t.batchId === emptyingTrashBatchRef.current.batchId
-        );
-        if (remainingTasksInBatch.length === 0) {
-            setEmptyingTrashBatch(null); // Clears the batch if no more tasks from it are pending
-            showStatusMessage("All tasks from the current batch have been processed or restored.");
+  const onUndoPendingFinalDeletion = useCallback((taskId: number) => {
+    setTodos(prevTodos => {
+      let taskRestored = false;
+      let restoredTaskText = "";
+      const newTodos = prevTodos.map(todo => {
+        if (todo.id === taskId && todo.pendingFinalDeletionTimestamp) {
+          taskRestored = true;
+          restoredTaskText = todo.text;
+          return { ...todo, isDeleted: true, completed: false, pendingFinalDeletionTimestamp: null, batchId: null };
         }
-    }
-  }, [showStatusMessage, todos]);
+        return todo;
+      });
+      if (taskRestored) {
+        showStatusMessage(`Pending deletion of "${restoredTaskText.substring(0,20)}..." undone.`);
+        const currentBatch = emptyingTrashBatchRef.current;
+        if (currentBatch) {
+          const anyOtherTasksFromThisBatchStillPending = newTodos.some(t => t.id !== taskId && currentBatch.taskIds.includes(t.id) && t.batchId === currentBatch.batchId && t.pendingFinalDeletionTimestamp);
+          if (!anyOtherTasksFromThisBatchStillPending) {
+            setEmptyingTrashBatch(null);
+            showStatusMessage("All tasks in the current pending group have been processed or undone.");
+          }
+        }
+      }
+      return newTodos;
+    });
+    focusInput(); 
+    resetInactivityTimer();
+  }, [showStatusMessage, focusInput, resetInactivityTimer]);
 
-  // Task 2.4: useEffect for Automatic Final Deletion (Stage 3)
   useEffect(() => {
     if (!isClient || !initialLoadComplete) return;
-
     autoFinalDeleteIntervalRef.current = setInterval(() => {
       const now = Date.now();
       let tasksWereAutoDeleted = false;
       setTodos(prevTodos => {
         const updatedTodos = prevTodos.filter(todo => {
           if (todo.pendingFinalDeletionTimestamp && now >= todo.pendingFinalDeletionTimestamp) {
-            // Check against the emptyingTrashBatchRef for the global restore window
             const batchInfo = emptyingTrashBatchRef.current;
             if (batchInfo && todo.batchId === batchInfo.batchId && now < batchInfo.initiatedAt + STAGE_4_GLOBAL_RESTORE_WINDOW) {
-              return true; // Keep it, global restore window is active for its batch
+              return true;
             }
-            // Otherwise, delete it
-            console.log(`Auto-deleting task ID: ${todo.id} (Grace period expired)`);
             tasksWereAutoDeleted = true;
-            return false; 
+            return false;
           }
           return true;
         });
@@ -312,101 +282,89 @@ export default function Home() {
         showStatusMessage("Tasks with expired grace periods have been permanently deleted.");
       }
     }, AUTO_FINAL_DELETE_INTERVAL);
-
-    return () => {
-      if (autoFinalDeleteIntervalRef.current) clearInterval(autoFinalDeleteIntervalRef.current);
-    };
+    return () => { if (autoFinalDeleteIntervalRef.current) clearInterval(autoFinalDeleteIntervalRef.current); };
   }, [isClient, initialLoadComplete, showStatusMessage]);
 
-  // Task 2.5: Handle Global Restore All from Batch (Stage 4)
-  const handleGlobalRestoreAllFromBatch = useCallback(() => {
+  const handleRestoreAllPendingDeletion = useCallback(() => {
     const batchInfo = emptyingTrashBatchRef.current;
     if (!batchInfo) {
-      showStatusMessage("No active batch to restore.");
+      showStatusMessage("No tasks pending deletion to restore.");
       return;
     }
     if (Date.now() >= batchInfo.initiatedAt + STAGE_4_GLOBAL_RESTORE_WINDOW) {
-      showStatusMessage("Global restore window for this batch has expired.");
-      setEmptyingTrashBatch(null); // Clear the expired batch
+      showStatusMessage("Restore window for these tasks has expired.");
+      setEmptyingTrashBatch(null);
       return;
     }
-
-    const restoredTasks: Todo[] = batchInfo.tasksSnapshot.map(snapTodo => ({
-      ...snapTodo, // Takes all original properties from snapshot
-      isDeleted: false,
-      completed: snapTodo.completed, // Restore original completed status
-      pendingFinalDeletionTimestamp: null,
-      batchId: null,
-    }));
-
+    const tasksToRestoreFromSnapshot = batchInfo.tasksSnapshot;
     setTodos(prevTodos => {
-      // Filter out tasks that were part of the batch from current todos
-      const remainingTodos = prevTodos.filter(t => !batchInfo.taskIds.includes(t.id));
-      // Add the restored tasks
-      return [...remainingTodos, ...restoredTasks];
+      const updatedTodos = prevTodos.map(currentTodo => {
+        const snapshotVersion = tasksToRestoreFromSnapshot.find(snapTodo => snapTodo.id === currentTodo.id);
+        if (snapshotVersion && currentTodo.batchId === batchInfo.batchId) {
+          return { ...currentTodo, text: snapshotVersion.text, isDeleted: true, completed: false, pendingFinalDeletionTimestamp: null, batchId: null };
+        }
+        return currentTodo;
+      });
+      return updatedTodos;
     });
-
-    showStatusMessage(`${restoredTasks.length} task(s) restored from batch '${batchInfo.batchId}'.`);
+    showStatusMessage(`${tasksToRestoreFromSnapshot.length} task(s) restored to deleted items list.`);
     setEmptyingTrashBatch(null);
     if (globalRestoreWindowTimeoutRef.current) clearTimeout(globalRestoreWindowTimeoutRef.current);
+    focusInput(); 
+    resetInactivityTimer();
+  }, [showStatusMessage, focusInput, resetInactivityTimer]);
 
-  }, [showStatusMessage]);
-  
-  // Task 2.6: useEffect for Emptying Trash Batch Timeout (Stage 4 Window Expiry)
   useEffect(() => {
     if (emptyingTrashBatch) {
-      const timeRemaining = (emptyingTrashBatch.initiatedAt + STAGE_4_GLOBAL_RESTORE_WINDOW) - Date.now();
-      if (timeRemaining > 0) {
+      const timeRemaining = (emptyingTrashBatch.initiatedAt + STAGE_4_GLOBAL_RESTORE_WINDOW) - currentTime;
+      if (timeRemaining <= 0) {
+        // Check if the batch is still the same one that was set to expire
+        if (emptyingTrashBatchRef.current && emptyingTrashBatchRef.current.batchId === emptyingTrashBatch.batchId) {
+            showStatusMessage(`Global restore window for recently deleted tasks has ended.`);
+            setEmptyingTrashBatch(null);
+            if (globalRestoreWindowTimeoutRef.current) clearTimeout(globalRestoreWindowTimeoutRef.current);
+        }
+      } else {
         if (globalRestoreWindowTimeoutRef.current) clearTimeout(globalRestoreWindowTimeoutRef.current);
         globalRestoreWindowTimeoutRef.current = setTimeout(() => {
-          showStatusMessage(`Global restore window for batch '${emptyingTrashBatch.batchId}' has ended.`);
-          setEmptyingTrashBatch(null);
+          // Re-check inside timeout to ensure this specific batch is still active
+          if (emptyingTrashBatchRef.current && emptyingTrashBatchRef.current.batchId === emptyingTrashBatch.batchId) {
+            showStatusMessage(`Global restore window for recently deleted tasks has ended.`);
+            setEmptyingTrashBatch(null);
+          }
         }, timeRemaining);
       }
     } else {
-      // Clear timeout if batch is cleared for other reasons (e.g. manual restore)
       if (globalRestoreWindowTimeoutRef.current) clearTimeout(globalRestoreWindowTimeoutRef.current);
     }
-    return () => {
-      if (globalRestoreWindowTimeoutRef.current) clearTimeout(globalRestoreWindowTimeoutRef.current);
-    };
-  }, [emptyingTrashBatch, showStatusMessage]);
+    return () => { if (globalRestoreWindowTimeoutRef.current) clearTimeout(globalRestoreWindowTimeoutRef.current); };
+  }, [emptyingTrashBatch, showStatusMessage, currentTime]); // Added currentTime here
 
-  // Task 2.7: Update Derived State / Filter Logic
   const filteredAndSearchedTodos = useMemo(() => {
     if (!isClient || !initialLoadComplete) return [];
     return todos.filter(todo => {
       const isInUndoStage1 = undoableActions.has(todo.id) && undoableActions.get(todo.id)?.actionType === 'delete';
       const isInGraceStage2 = !!todo.pendingFinalDeletionTimestamp;
-
-      // Visibility based on stages
       let isVisible = true;
       if (filter === 'active') isVisible = !todo.completed && !todo.isDeleted && !isInGraceStage2 || isInUndoStage1 && !undoableActions.get(todo.id)!.originalTodo.completed;
       else if (filter === 'completed') isVisible = todo.completed && !todo.isDeleted && !isInGraceStage2 || isInUndoStage1 && undoableActions.get(todo.id)!.originalTodo.completed;
       else if (filter === 'deleted') isVisible = (todo.isDeleted || isInGraceStage2) && !isInUndoStage1;
-      else if (filter === 'all') isVisible = !todo.isDeleted || isInUndoStage1 || isInGraceStage2;
-      else {
-          console.warn(`Unknown filter type: ${filter}`);
-          isVisible = true; // Default to show if filter is unknown
-      }
-      
+      else if (filter === 'all') isVisible = !isInGraceStage2;
+      else { isVisible = true; }
       if (!isVisible) return false;
-
       if (searchQuery.trim() !== '') {
         return todo.text.toLowerCase().includes(searchQuery.toLowerCase());
       }
       return true;
     });
-  }, [todos, filter, searchQuery, isClient, initialLoadComplete, undoableActions, emptyingTrashBatch]);
+  }, [todos, filter, searchQuery, isClient, initialLoadComplete, undoableActions]);
 
   const itemsEligibleForEmptyTrash = useMemo(() => {
-      return todos.filter(todo => todo.isDeleted && !undoableActions.has(todo.id) && !todo.pendingFinalDeletionTimestamp).length;
+    return todos.filter(todo => todo.isDeleted && !undoableActions.has(todo.id) && !todo.pendingFinalDeletionTimestamp).length;
   }, [todos, undoableActions]);
 
-  // --- Updated Counters ---
-  const activeTasksCount = useMemo(() => todos.filter(t => !t.completed && !t.isDeleted && !t.pendingFinalDeletionTimestamp && !undoableActions.has(t.id)).length, [todos, undoableActions]);
-  const totalVisibleTasksCount = useMemo(() => filteredAndSearchedTodos.length, [filteredAndSearchedTodos]); // Based on current filter
-  const softDeletedAndStage2Count = useMemo(() => todos.filter(t => (t.isDeleted || t.pendingFinalDeletionTimestamp) && !undoableActions.has(t.id)).length, [todos, undoableActions]);
+  const activeTasksCount = useMemo(() => todos.filter(t => !t.completed && !t.isDeleted && !t.pendingFinalDeletionTimestamp && !(undoableActions.has(t.id) && undoableActions.get(t.id)?.actionType === 'delete')).length, [todos, undoableActions]);
+  const softDeletedAndStage2Count = useMemo(() => todos.filter(t => (t.isDeleted || t.pendingFinalDeletionTimestamp) && !(undoableActions.has(t.id) && undoableActions.get(t.id)?.actionType === 'restore')).length, [todos, undoableActions]);
 
   const getGlobalRestoreTimeRemaining = () => {
     if (!emptyingTrashBatch) return '';
@@ -425,17 +383,15 @@ export default function Home() {
     { value: 'completed', label: 'Completed' },
     { value: 'deleted', label: 'Deleted' },
   ];
-  
+
   const getEmptyStateMessage = () => {
     if (!initialLoadComplete) return null;
-    const hasSearch = searchQuery.trim() !== '';
     if (filteredAndSearchedTodos.length > 0) return null;
-
     if (todos.length === 0) return { title: "No tasks yet!", message: "Get started by adding a new task above." };
-    if (hasSearch) return { title: "No tasks found", message: `Your search for "${searchQuery}" did not match any tasks.` };
-    if (filter === 'active' && activeTasksCount === 0) return { title: "No active tasks!", message: "All your tasks are completed or deleted." };
-    if (filter === 'completed' && todos.filter(t=>t.completed).length === 0) return { title: "No completed tasks!", message: "Mark some tasks as completed to see them here." };
-    if (filter === 'deleted' && softDeletedAndStage2Count === 0) return { title: "Trash is empty!", message: "You haven't deleted any tasks yet." };
+    if (searchQuery.trim() !== '') return { title: "No tasks found", message: `Your search for "${searchQuery}" did not match any tasks.` };
+    if (filter === 'active') return { title: "No active tasks!", message: "All your tasks are completed or deleted." };
+    if (filter === 'completed') return { title: "No completed tasks!", message: "Mark some tasks as completed to see them here." };
+    if (filter === 'deleted') return { title: "Trash is empty!", message: "You haven't deleted any tasks yet, or no tasks match the current search in trash." };
     return { title: "No tasks here", message: "Try a different filter or add some tasks!" };
   };
 
@@ -494,7 +450,6 @@ export default function Home() {
             ) : (
               emptyState ? (
                 <div className="text-center text-slate-500 mt-10 p-6 border-2 border-dashed border-slate-700 rounded-lg">
-                  {/* Basic Icon, consider a more descriptive one based on emptyState.title */} 
                   <svg className="mx-auto h-12 w-12 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 10h.01" /></svg>
                   <h3 className="mt-2 text-xl font-semibold text-slate-400">{emptyState.title}</h3>
                   <p className="mt-1 text-sm text-slate-500">{emptyState.message}</p>
@@ -503,24 +458,24 @@ export default function Home() {
                 <TodoList
                   todos={filteredAndSearchedTodos}
                   onToggle={toggleTodo}
-                  onRemove={softDeleteTodo} // This now handles Stage 1: soft delete / restore from soft delete
+                  onRemove={softDeleteTodo}
                   onUpdateText={updateTodoText}
                   undoableActions={undoableActions}
-                  onUndo={handleUndo} // Stage 1 undo
+                  onUndo={handleUndo}
                   undoTimeoutDuration={UNDO_TIMEOUT}
-                  onRestoreDuringGracePeriod={onRestoreDuringGracePeriod} // Stage 2 restore
-                  currentTime={currentTime} // For countdowns
+                  onRestoreDuringGracePeriod={onUndoPendingFinalDeletion}
+                  currentTime={currentTime}
                 />
               )
             )}
              {isClient && initialLoadComplete && filter === 'deleted' && filteredAndSearchedTodos.length > 0 && !emptyingTrashBatch && itemsEligibleForEmptyTrash > 0 && (
               <p className="text-center mt-4 text-xs sm:text-sm text-slate-400">
-                These tasks are soft-deleted. Use "Empty Trash" to start final deletion process.
+                These tasks are in trash. Use "Empty Trash" to start final deletion process.
               </p>
             )}
             {isClient && initialLoadComplete && filter === 'deleted' && emptyingTrashBatch && (
                  <p className="text-center mt-4 text-xs sm:text-sm text-orange-400">
-                    Batch '{emptyingTrashBatch.batchId.substring(6)}' is pending final deletion. Global restore window: {getGlobalRestoreTimeRemaining()}
+                    Tasks are pending final deletion. You can undo this for {getGlobalRestoreTimeRemaining()}.
                  </p>
             )}
           </CardContent>
@@ -546,14 +501,13 @@ export default function Home() {
                     </Button>
                 )}
                 {emptyingTrashBatch && (
-                    <Button 
-                        onClick={handleGlobalRestoreAllFromBatch}
-                        variant="outline"
+                    <Button
+                        onClick={handleRestoreAllPendingDeletion}
+                        variant="default"
                         size="sm"
-                        className="text-green-400 border-green-500 hover:bg-green-700 hover:text-green-200"
-                        disabled={isActionInProgress && !emptyingTrashBatch} // Allow if only this batch is the action
+                        className="bg-green-500 hover:bg-green-400 text-black font-bold text-sm sm:text-base px-3 py-1.5 h-auto focus:ring-green-600 focus:ring-offset-slate-800"
                     >
-                        Restore Batch ({emptyingTrashBatch.tasksSnapshot.length}) - {getGlobalRestoreTimeRemaining()}
+                        Restore All ({emptyingTrashBatch.tasksSnapshot.length}) - {getGlobalRestoreTimeRemaining()}
                     </Button>
                 )}
               </div>
@@ -564,7 +518,6 @@ export default function Home() {
         {isClient && statusMessage && (
           <VisibleStatusMessage
             message={statusMessage}
-            // duration is handled by showStatusMessage now
             onDismiss={() => {
               if (statusMessageTimerRef.current) clearTimeout(statusMessageTimerRef.current);
               setStatusMessage('');
