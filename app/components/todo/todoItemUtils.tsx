@@ -4,7 +4,7 @@ import type { PrimaryActionType } from './TodoActions';
 import { RotateCcw, Undo2, Trash2 } from 'lucide-react';
 
 export interface PrimaryActionDetails {
-  icon: React.ReactElement;
+  icon: React.ReactElement | null; // Allow null for icon
   label: string;
   title: string;
   onAction: () => void;
@@ -46,7 +46,7 @@ export function getPrimaryActionDetails({
     };
   } else if (isStage1UndoActive && onUndo) {
     return {
-      icon: <Undo2 size={16} />,
+      icon: null, // Icon removed here
       label: `Undo delete for: ${todo.text}`,
       title: `Undo delete (${stage1UndoCountdown}s left)`,
       onAction: () => onUndo(todo.id),
@@ -74,7 +74,7 @@ export function getPrimaryActionDetails({
       };
     } 
     return { 
-      icon: <div />,
+      icon: React.createElement('div'), // Using React.createElement for an empty div
       label: 'Task is deleted',
       title: 'Task is deleted',
       onAction: () => {},
@@ -92,7 +92,7 @@ export function getPrimaryActionDetails({
     };
   }
   return {
-    icon: <div />,
+    icon: React.createElement('div'), // Using React.createElement for an empty div
     label: 'No action',
     title: 'No action available in this state/filter',
     onAction: () => {},

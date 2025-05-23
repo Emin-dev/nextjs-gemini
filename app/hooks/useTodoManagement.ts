@@ -109,12 +109,12 @@ export function useTodoManagement({
   const addTodo = useCallback((text: string) => {
     const newTodo: Todo = { id: Date.now(), text, completed: false, isDeleted: false, markedForDeletionAt: null, pendingFinalDeletionTimestamp: null, stage2BatchId: null };
     setTodos(prev => [...prev, newTodo]);
-    if (currentFilter !== 'all') setFilter('all');
-    setSearchQuery('');
+    // if (currentFilter !== 'all') setFilter('all'); // Removed: Keep current filter
+    setSearchQuery(''); // Clear search query
     showStatusMessage(`Task "${text.substring(0, 20)}..." added.`);
     focusInput();
     resetInactivityTimer();
-  }, [currentFilter, setFilter, setSearchQuery, showStatusMessage, focusInput, resetInactivityTimer, setTodos]);
+  }, [setSearchQuery, showStatusMessage, focusInput, resetInactivityTimer, setTodos]); // Removed currentFilter and setFilter from dependencies
 
   const toggleTodo = useCallback((id: number) => {
     const todo = todos.find(t => t.id === id);
