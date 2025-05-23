@@ -29,9 +29,9 @@ export function getPrimaryActionDetails({
   redBorderCountdown: number;
   isStage1UndoActive: boolean;
   stage1UndoCountdown: number;
-  onRestorePendingDeletion?: (id: number) => void;
-  onUndo?: (id: number) => void;
-  onRemove: (id: number) => void;
+  onRestorePendingDeletion?: (id: string) => void;
+  onUndo?: (id: string) => void;
+  onRemove: (id: string) => void;
   currentFilter: FilterValue;
   undoableAction: UndoableActionDetails | null;
 }): PrimaryActionDetails {
@@ -40,7 +40,7 @@ export function getPrimaryActionDetails({
       icon: <RotateCcw size={16} />,
       label: `Undo permanent delete for: ${todo.text}`,
       title: `Undo permanent delete (${redBorderCountdown}s left)`,
-      onAction: () => onRestorePendingDeletion(todo.id),
+      onAction: () => onRestorePendingDeletion(todo.id), // todo.id is string
       disabled: false,
       type: 'undo-pending-deletion',
     };
@@ -49,17 +49,17 @@ export function getPrimaryActionDetails({
       icon: null, // Icon removed here
       label: `Undo delete for: ${todo.text}`,
       title: `Undo delete (${stage1UndoCountdown}s left)`,
-      onAction: () => onUndo(todo.id),
+      onAction: () => onUndo(todo.id), // todo.id is string
       disabled: false,
       type: 'undo-initial-delete',
     };
   } else if (todo.isDeleted && !isRedBorderPhase && currentFilter === 'deleted') {
-    if (undoableAction && undoableAction.actionType === 'restore' && undoableAction.id === todo.id && onUndo) {
+    if (undoableAction && undoableAction.actionType === 'restore' && String(undoableAction.id) === String(todo.id) && onUndo) {
       return {
         icon: <Trash2 size={16} />,
         label: `Undo restoration of: ${todo.text}`,
         title: `Undo restoration (re-deletes task to trash)`,
-        onAction: () => onUndo(todo.id),
+        onAction: () => onUndo(todo.id), // todo.id is string
         disabled: false,
         type: 'initial-delete',
       };
@@ -68,7 +68,7 @@ export function getPrimaryActionDetails({
         icon: <Undo2 size={16} />,
         label: `Restore task: ${todo.text}`,
         title: `Restore task from trash`,
-        onAction: () => onUndo(todo.id),
+        onAction: () => onUndo(todo.id), // todo.id is string
         disabled: false,
         type: 'restore-from-trash',
       };
@@ -86,7 +86,7 @@ export function getPrimaryActionDetails({
       icon: <Trash2 size={16} />,
       label: `Delete task: ${todo.text}`,
       title: `Delete task`,
-      onAction: () => onRemove(todo.id),
+      onAction: () => onRemove(todo.id), // todo.id is string
       disabled: false,
       type: 'initial-delete',
     };

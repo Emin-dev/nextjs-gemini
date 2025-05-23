@@ -56,14 +56,14 @@ export const TodoAddForm = forwardRef<TodoAddFormHandle, TodoAddFormProps>(({ on
         value={newTodoText}
         onChange={(e) => setNewTodoText(e.target.value)}
         placeholder="Add a new task"
-        className="flex-grow bg-slate-700 border-slate-600 text-white placeholder-slate-400 focus:ring-sky-500 focus:border-sky-500"
+        className="flex-grow bg-slate-700 border-slate-600 text-white placeholder-slate-400 focus:ring-sky-500 focus:border-sky-500 rounded-lg"
         onKeyDown={handleKeyDown}
         aria-label="New task text"
         disabled={disabled} // Apply disabled prop
       />
       <Button
         onClick={handleSubmit}
-        className="bg-sky-600 hover:bg-sky-700 text-white"
+        className="bg-sky-600 hover:bg-sky-700 text-white rounded-lg active:scale-95 active:opacity-75 transition-transform duration-75"
         disabled={disabled || newTodoText.trim() === ''} // Apply disabled prop
       >
         Add Task

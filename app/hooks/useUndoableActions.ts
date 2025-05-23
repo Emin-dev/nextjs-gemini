@@ -11,7 +11,7 @@ interface UseUndoableActionsProps {
   currentFilter: FilterValue;
   setFilter: (filter: FilterValue) => void;
   setSearchQuery: (query: string) => void;
-  focusInput: () => void; // Keep for other potential uses, but not here
+  focusInput: () => void;
   resetInactivityTimer: () => void;
 }
 
@@ -21,27 +21,28 @@ export function useUndoableActions({
   currentFilter,
   setFilter,
   setSearchQuery,
-  focusInput, // Keep prop
+  focusInput,
   resetInactivityTimer,
 }: UseUndoableActionsProps) {
-  const initialUndoableActions = useMemo(() => new Map<number, UndoableActionDetails>(), []);
-  const [undoableActionsData, setUndoableActions, removeUndoableActionsStorage] = useLocalStorage<Map<number, UndoableActionDetails> | Record<string, UndoableActionDetails>>(
+  const initialUndoableActions = useMemo(() => new Map<string, UndoableActionDetails>(), []);
+  const [undoableActionsData, setUndoableActions, removeUndoableActionsStorage] = useLocalStorage<Map<string, UndoableActionDetails> | Record<string, UndoableActionDetails>>(
     UNDOABLE_ACTIONS_STORAGE_KEY,
     initialUndoableActions
   );
-  const undoTimeoutRefs = useRef<Map<number, NodeJS.Timeout>>(new Map());
+  const undoTimeoutRefs = useRef<Map<string, NodeJS.Timeout>>(new Map());
 
-  const clearSpecificUndoAction = useCallback((id: number, showConfirmation: boolean = false, confirmationMessage?: string) => {
-    const timer = undoTimeoutRefs.current.get(id);
+  const clearSpecificUndoAction = useCallback((id: string, showConfirmation: boolean = false, confirmationMessage?: string) => {
+    const stringId = String(id); // Ensure ID is a string
+    const timer = undoTimeoutRefs.current.get(stringId);
     if (timer) clearTimeout(timer);
-    undoTimeoutRefs.current.delete(id);
+    undoTimeoutRefs.current.delete(stringId);
     
     let actionDetailsToReturn: UndoableActionDetails | undefined;
     setUndoableActions(prev => {
-      const newState = prev instanceof Map ? new Map(prev) : new Map(Object.entries(prev).map(([k, v]) => [Number(k), v]));
-      actionDetailsToReturn = newState.get(id);
+      const newState = prev instanceof Map ? new Map(prev) : new Map(Object.entries(prev).map(([k, v]) => [String(k), v]));
+      actionDetailsToReturn = newState.get(stringId);
       const originalTodoText = actionDetailsToReturn?.originalTodo?.text ? actionDetailsToReturn.originalTodo.text.substring(0,20) + '...' : 'task';
-      if (newState.delete(id) && showConfirmation && actionDetailsToReturn) {
+      if (newState.delete(stringId) && showConfirmation && actionDetailsToReturn) {
         const finalMessage = confirmationMessage || `Action on "${originalTodoText}" confirmed.`;
         showStatusMessage(finalMessage);
       }
@@ -51,19 +52,20 @@ export function useUndoableActions({
   }, [setUndoableActions, showStatusMessage]);
 
  useEffect(() => {
-    let currentActionsAsMap: Map<number, UndoableActionDetails>;
+    let currentActionsAsMap: Map<string, UndoableActionDetails>;
     if (undoableActionsData instanceof Map) {
-      currentActionsAsMap = new Map(undoableActionsData);
+      currentActionsAsMap = new Map(undoableActionsData.entries()); // Ensure string keys
     } else if (typeof undoableActionsData === 'object' && undoableActionsData !== null) {
-      currentActionsAsMap = new Map(Object.entries(undoableActionsData).map(([k, v]) => [Number(k), v as UndoableActionDetails]));
+      currentActionsAsMap = new Map(Object.entries(undoableActionsData).map(([k, v]) => [String(k), v as UndoableActionDetails]));
     } else {
       currentActionsAsMap = new Map(); 
     }
 
-    const updatedActionsMap = new Map<number, UndoableActionDetails>();
+    const updatedActionsMap = new Map<string, UndoableActionDetails>();
     let mapChanged = false;
 
     currentActionsAsMap.forEach((action, id) => {
+      const stringId = String(id); // Ensure ID is a string
       if (!action || typeof action.timestamp !== 'number' || !action.originalTodo || typeof action.originalTodo.text !== 'string') {
         mapChanged = true;
         return;
@@ -71,16 +73,16 @@ export function useUndoableActions({
 
       const elapsedTime = Date.now() - action.timestamp;
       if (elapsedTime < UNDO_TIMEOUT) {
-        updatedActionsMap.set(id, action); 
-        if (undoTimeoutRefs.current.has(id)) {
-          clearTimeout(undoTimeoutRefs.current.get(id)!);
+        updatedActionsMap.set(stringId, action); 
+        if (undoTimeoutRefs.current.has(stringId)) {
+          clearTimeout(undoTimeoutRefs.current.get(stringId)!);
         }
         const remainingTime = UNDO_TIMEOUT - elapsedTime;
         const undoTimer = setTimeout(() => {
           const todoText = action.originalTodo?.text ? `"${action.originalTodo.text.substring(0, 20)}..."` : "task";
-          clearSpecificUndoAction(id, true, `Deletion of ${todoText} auto-confirmed.`);
+          clearSpecificUndoAction(stringId, true, `Deletion of ${todoText} auto-confirmed.`);
         }, remainingTime);
-        undoTimeoutRefs.current.set(id, undoTimer);
+        undoTimeoutRefs.current.set(stringId, undoTimer);
       } else {
         mapChanged = true; 
       }
@@ -107,73 +109,69 @@ export function useUndoableActions({
   }, [undoableActionsData, clearSpecificUndoAction, setUndoableActions]); 
 
   const addUndoableAction = useCallback((todoToModify: Todo, actionType: 'delete' | 'restore' = 'delete') => {
-    if (typeof todoToModify.id !== 'number') {
-        console.error("todoToModify.id is not a number", todoToModify);
-        showStatusMessage("Error: Could not process action due to invalid todo ID.");
-        return;
-    }
-    clearSpecificUndoAction(todoToModify.id);
+    const stringId = String(todoToModify.id); // Ensure ID is a string
+    clearSpecificUndoAction(stringId);
 
-    const originalTodoForUndo: Todo = { ...todoToModify }; 
+    const originalTodoForUndo: Todo = { ...todoToModify, id: stringId }; 
     const markedAt = Date.now();
 
     setUndoableActions(prev => {
-      const newState = prev instanceof Map ? new Map(prev) : new Map(Object.entries(prev).map(([k, v]) => [Number(k), v]));
-      newState.set(todoToModify.id, { id: todoToModify.id, originalTodo: originalTodoForUndo, actionType, timestamp: markedAt });
+      const newState = prev instanceof Map ? new Map(prev) : new Map(Object.entries(prev).map(([k, v]) => [String(k), v]));
+      newState.set(stringId, { id: stringId, originalTodo: originalTodoForUndo, actionType, timestamp: markedAt });
       return newState;
     });
 
     const undoTimer = setTimeout(() => {
       const todoText = originalTodoForUndo.text ? `"${originalTodoForUndo.text.substring(0, 20)}..."` : "task";
-      clearSpecificUndoAction(todoToModify.id, true, `Deletion of ${todoText} auto-confirmed.`); 
+      clearSpecificUndoAction(stringId, true, `Deletion of ${todoText} auto-confirmed.`); 
     }, UNDO_TIMEOUT);
-    undoTimeoutRefs.current.set(todoToModify.id, undoTimer);
+    undoTimeoutRefs.current.set(stringId, undoTimer);
     
     const todoTextForMessage = originalTodoForUndo.text ? `"${originalTodoForUndo.text.substring(0, 20)}..."` : "Task";
     showStatusMessage(`${todoTextForMessage} marked for deletion. Undo timer started.`);
-    // focusInput(); // Removed to prevent search interference
     resetInactivityTimer();
-  }, [clearSpecificUndoAction, setUndoableActions, showStatusMessage, resetInactivityTimer]); // Removed focusInput from dependencies
+  }, [clearSpecificUndoAction, setUndoableActions, showStatusMessage, resetInactivityTimer]);
 
-  const performUndo = useCallback((idToUndo: number) => {
+  const performUndo = useCallback((idToUndo: string | number) => {
+    const stringIdToUndo = String(idToUndo); // Ensure ID is a string
     let actionDetails: UndoableActionDetails | undefined;
-    const currentActions = undoableActionsData instanceof Map ? undoableActionsData : new Map(Object.entries(undoableActionsData || {}).map(([k,v]) => [Number(k),v]));
-    actionDetails = currentActions.get(idToUndo);
+    const currentActions = undoableActionsData instanceof Map ? undoableActionsData : new Map(Object.entries(undoableActionsData || {}).map(([k,v]) => [String(k),v]));
+    actionDetails = currentActions.get(stringIdToUndo);
 
     if (!actionDetails || !actionDetails.originalTodo) {
-        console.warn("Could not perform undo: action details or originalTodo not found for id", idToUndo);
+        console.warn("Could not perform undo: action details or originalTodo not found for id", stringIdToUndo);
         return;
     }
     
     const originalTodoText = actionDetails.originalTodo?.text ? `"${actionDetails.originalTodo.text.substring(0, 20)}..."` : "Task";
 
-    const updatedOriginalTodo = { 
+    const updatedOriginalTodo: Todo = { 
         ...actionDetails.originalTodo, 
+        id: String(actionDetails.originalTodo.id), // Ensure original todo ID is also string
         markedForDeletionAt: null, 
         isDeleted: false,
         pendingFinalDeletionTimestamp: null,
         stage2BatchId: null,
      };
-    setTodos(prev => prev.map(todo => todo.id === idToUndo ? { ...updatedOriginalTodo } : todo));
+    setTodos(prev => prev.map(todo => String(todo.id) === stringIdToUndo ? { ...updatedOriginalTodo } : todo));
     showStatusMessage(`${originalTodoText} ${actionDetails.actionType === 'delete' ? 'restored' : 'deletion undone'}.`);
-    clearSpecificUndoAction(idToUndo, false);
+    clearSpecificUndoAction(stringIdToUndo, false);
 
     if (actionDetails.actionType === 'delete' && currentFilter === 'deleted') {
       setFilter('all');
       setSearchQuery(''); 
     }
 
-    // focusInput(); // Removed to prevent search interference
     resetInactivityTimer();
-  }, [undoableActionsData, clearSpecificUndoAction, showStatusMessage, resetInactivityTimer, currentFilter, setFilter, setSearchQuery, setTodos]); // Removed focusInput from dependencies
+  }, [undoableActionsData, clearSpecificUndoAction, showStatusMessage, resetInactivityTimer, currentFilter, setFilter, setSearchQuery, setTodos]);
 
   const getUndoableActionsMap = useCallback(() => {
     if (undoableActionsData instanceof Map) {
-        return undoableActionsData;
+        return new Map(Array.from(undoableActionsData.entries()).map(([k,v]) => [String(k),v]));
     } else if (typeof undoableActionsData === 'object' && undoableActionsData !== null) {
-        return new Map(Object.entries(undoableActionsData).map(([k, v]) => [Number(k), v as UndoableActionDetails]));
+        return new Map(Object.entries(undoableActionsData).map(([k, v]) => [String(k), v as UndoableActionDetails]));
     }
-    return new Map<number, UndoableActionDetails>();
+    return new Map<string, UndoableActionDetails>();
   }, [undoableActionsData]);
 
   return {

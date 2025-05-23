@@ -43,19 +43,21 @@ export function TodoActions({
     buttonColorClasses = 'text-slate-500'; 
   }
 
+  const commonButtonClasses = "p-2 h-auto w-auto focus:ring-offset-slate-800 active:scale-95 active:opacity-75 transition-transform duration-75";
+
   return (
-    <div className="flex flex-col items-center justify-start gap-1 self-start ml-1 sm:ml-2" data-no-toggle>
+    <div className="flex flex-col items-center justify-start gap-1.5 self-start ml-1 sm:ml-2" data-no-toggle>
       {showEditButton && (
         <Button 
           variant="ghost" 
-          size="icon"
+          size="icon" // Size prop might be overridden by p-X and h-auto w-auto but kept for consistency with <Button>
           onClick={onEdit}
-          className="text-sky-400 hover:text-sky-300 p-1.5 h-auto w-auto focus:ring-sky-500 focus:ring-offset-slate-800"
+          className={`text-sky-400 hover:text-sky-300 focus:ring-sky-500 ${commonButtonClasses}`}
           aria-label={`Edit task: ${todoText}`}
           title={`Edit task: ${todoText}`}
           disabled={!isInteractive || primaryActionDisabled} 
         >
-          <Edit3 size={16} />
+          <Edit3 size={20} /> {/* Increased icon size */}
         </Button>
       )}
       {showMainActionButtons && (
@@ -63,13 +65,13 @@ export function TodoActions({
             onClick={onPrimaryAction} 
             variant="ghost"
             size="icon"
-            className={`p-1.5 h-auto w-auto focus:ring-offset-slate-800 ${buttonColorClasses} 
+            className={`${buttonColorClasses} ${commonButtonClasses} 
               ${primaryActionDisabled || !isInteractive ? 'opacity-50 cursor-not-allowed' : ''}`}
             aria-label={primaryActionLabel}
             title={primaryActionTitle}
             disabled={!isInteractive || primaryActionDisabled}
           >
-            {primaryActionIcon} {/* This will now correctly render null if primaryActionIcon is null, resulting in no icon */}
+            {primaryActionIcon && React.cloneElement(primaryActionIcon, { size: 20 })} {/* Increased icon size */}
           </Button>
       )}
     </div>

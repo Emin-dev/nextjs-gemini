@@ -29,7 +29,7 @@ function checkAndUpdateBatchCompletion(
   if (currentBatch && !currentBatch.allIndividualTimersEndedForBatch) {
     let allOriginalTasksProcessed = true;
     for (const originalTaskId of currentBatch.taskIdsInBatch) {
-      const taskInCurrentList = currentTodos.find(t => t.id === originalTaskId);
+      const taskInCurrentList = currentTodos.find(t => String(t.id) === String(originalTaskId));
       if (taskInCurrentList && 
           taskInCurrentList.stage2BatchId === currentBatch.batchId && 
           taskInCurrentList.pendingFinalDeletionTimestamp && 
@@ -89,14 +89,14 @@ export function useEmptyingTrash({
       return;
     }
     const newBatchId = `batch-${Date.now()}`;
-    const taskIdsInBatch = tasksToEmpty.map(t => t.id);
-    const tasksSnapshot = JSON.parse(JSON.stringify(tasksToEmpty)); 
+    const taskIdsInBatch = tasksToEmpty.map(t => String(t.id)); // Ensure string IDs
+    const tasksSnapshot = JSON.parse(JSON.stringify(tasksToEmpty.map(t => ({...t, id: String(t.id)})))); 
     const batchInitiationTime = Date.now();
     setTodos(prevTodos => 
       prevTodos.map(todo => 
-        taskIdsInBatch.includes(todo.id) 
-          ? { ...todo, pendingFinalDeletionTimestamp: batchInitiationTime + STAGE_2_GRACE_PERIOD_DURATION, stage2BatchId: newBatchId }
-          : todo
+        taskIdsInBatch.includes(String(todo.id)) 
+          ? { ...todo, id: String(todo.id), pendingFinalDeletionTimestamp: batchInitiationTime + STAGE_2_GRACE_PERIOD_DURATION, stage2BatchId: newBatchId }
+          : { ...todo, id: String(todo.id) }
       )
     );
     setEmptyingTrashBatch({
@@ -111,14 +111,15 @@ export function useEmptyingTrash({
     resetInactivityTimer();
   }, [todos, setTodos, showStatusMessage, focusInput, resetInactivityTimer, setEmptyingTrashBatch]);
 
-  const undoIndividualPendingFinalDeletion = useCallback((taskId: number) => {
+  const undoIndividualPendingFinalDeletion = useCallback((taskId: string | number) => {
+    const stringTaskId = String(taskId);
     let taskText = "";
     setTodos(prevTodos => prevTodos.map(todo => {
-      if (todo.id === taskId && todo.pendingFinalDeletionTimestamp && todo.stage2BatchId) {
+      if (String(todo.id) === stringTaskId && todo.pendingFinalDeletionTimestamp && todo.stage2BatchId) {
         taskText = todo.text;
-        return { ...todo, pendingFinalDeletionTimestamp: null, stage2BatchId: null };
+        return { ...todo, id: String(todo.id), pendingFinalDeletionTimestamp: null, stage2BatchId: null };
       }
-      return todo;
+      return { ...todo, id: String(todo.id) }; // Ensure all IDs are strings
     }));
     if (taskText) {
       showStatusMessage(`Final deletion of "${taskText.substring(0,20)}..." undone.`);
@@ -144,7 +145,7 @@ export function useEmptyingTrash({
             return false; 
           }
           return true;
-        });
+        }).map(t => ({...t, id: String(t.id)})); // Ensure string IDs
 
         if (tasksPermanentlyDeletedThisTick > 0) {
           showStatusMessage(`${tasksPermanentlyDeletedThisTick} task(s) permanently deleted.`);
@@ -169,15 +170,17 @@ export function useEmptyingTrash({
     }
     const restoredTasks = batchToRestore.tasksSnapshot.map(snapTodo => ({
       ...snapTodo,
+      id: String(snapTodo.id), // Ensure string IDs
       isDeleted: true,
       markedForDeletionAt: null,
       pendingFinalDeletionTimestamp: null,
       stage2BatchId: null,
     }));
     setTodos(prevTodos => {
-      const taskIdsAlreadyPresent = new Set(prevTodos.map(t => t.id));
-      const newTasksToAdd = restoredTasks.filter(rt => !taskIdsAlreadyPresent.has(rt.id));
-      return [...prevTodos, ...newTasksToAdd];
+      const taskIdsAlreadyPresent = new Set(prevTodos.map(t => String(t.id)));
+      const newTasksToAdd = restoredTasks.filter(rt => !taskIdsAlreadyPresent.has(String(rt.id)));
+      const updatedOldTasks = prevTodos.map(t => ({...t, id: String(t.id)})); // Ensure string IDs
+      return [...updatedOldTasks, ...newTasksToAdd];
     });
     setEmptyingTrashBatch(prevBatch => {
         if(prevBatch && prevBatch.batchId === batchToRestore.batchId){

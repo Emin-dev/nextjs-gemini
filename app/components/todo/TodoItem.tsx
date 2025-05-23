@@ -15,13 +15,13 @@ import { FILTER_SWITCH_DELAY, UNDO_TIMEOUT, STAGE_2_GRACE_PERIOD_DURATION } from
 
 interface TodoItemProps {
   todo: Todo;
-  onToggle: (id: number) => void;
-  onRemove: (id: number) => void; 
-  onUpdateText: (id: number, newText: string) => void;
+  onToggle: (id: string) => void;
+  onRemove: (id: string) => void; 
+  onUpdateText: (id: string, newText: string) => void;
   undoableAction: UndoableActionDetails | null; 
-  onUndo: (id: number) => void; 
+  onUndo: (id: string) => void; 
   undoTimeoutDuration: number; 
-  onRestorePendingDeletion?: (id: number) => void; 
+  onRestorePendingDeletion?: (id: string) => void; 
   currentTime: number; 
   emptyingTrashBatch: EmptyingTrashBatchDetails | null;
   currentFilter: FilterValue;
@@ -103,6 +103,7 @@ export function TodoItem({
     'focus-within:shadow-lg focus-within:ring-2 focus-within:ring-sky-500 focus-within:ring-offset-2 focus-within:ring-offset-slate-800',
     'transition-all duration-300',
     'w-full',
+    'rounded-lg', // Added for more iOS-like feel
     (todo.isDeleted && !isYellowBorderPhase && !isRedBorderPhase && !isStage1UndoActive && currentFilter !== 'deleted') ? 'opacity-50 line-through' : '',
     (todo.isDeleted && currentFilter === 'deleted' && !isRedBorderPhase && !isStage1UndoActive) ? 'opacity-70' : '',
     isStage1UndoActive ? 'ring-2 ring-yellow-400 ring-offset-1 ring-offset-slate-800 animate-pulseSlow' : '',
@@ -136,8 +137,8 @@ export function TodoItem({
       className="list-none w-full flex"
     >
       <Card className={cardClasses} onClick={handleCardClick}>
-        <CardContent className="p-2 sm:p-3 flex flex-col gap-1 sm:gap-2"> 
-          <div className="flex items-center justify-between gap-1 sm:gap-2"> 
+        <CardContent className="p-3 sm:p-4 flex flex-col gap-2 sm:gap-3"> 
+          <div className="flex items-center justify-between gap-2 sm:gap-3"> 
             <Image
               src={`https://picsum.photos/seed/${todo.id}/600`}
               alt={`Visual cue for task: ${todo.text}`}

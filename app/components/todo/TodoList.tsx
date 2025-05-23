@@ -5,13 +5,13 @@ import type { Todo, UndoableActionDetails, EmptyingTrashBatchDetails, FilterValu
 
 interface TodoListProps {
   todos: Todo[];
-  onToggle: (id: number) => void;
-  onRemove: (id: number) => void; 
-  onUpdateText: (id: number, newText: string) => void;
-  undoableActions: Map<number, UndoableActionDetails>; 
-  onUndo: (id: number) => void; 
+  onToggle: (id: string) => void;
+  onRemove: (id: string) => void; 
+  onUpdateText: (id: string, newText: string) => void;
+  undoableActions: Map<string, UndoableActionDetails>; 
+  onUndo: (id: string) => void; 
   undoTimeoutDuration: number;
-  onRestorePendingDeletion?: (id: number) => void; 
+  onRestorePendingDeletion?: (id: string) => void; 
   currentTime: number; 
   emptyingTrashBatch: EmptyingTrashBatchDetails | null; 
   currentFilter: FilterValue; // Added currentFilter
@@ -34,7 +34,7 @@ export function TodoList({
   return (
     <ul className="space-y-3 mt-4">
       {todos.map(todo => {
-        const currentUndoAction = undoableActions.get(todo.id) || null;
+        const currentUndoAction = undoableActions.get(String(todo.id)) || null; // Ensure string ID for map lookup
         return (
           <TodoItem
             key={todo.id}

@@ -68,13 +68,13 @@ export function TodoDisplay({
         <label
           id={labelId}
           htmlFor={!isDisabled ? checkboxId : undefined}
-          className={`text-slate-200 text-base sm:text-lg truncate 
+          className={`text-slate-200 text-base sm:text-lg break-words 
             ${todo.completed && !todo.isDeleted && !isUndoOrDeletionPhaseActive ? 'line-through text-slate-400' : ''} 
             ${isDisabled ? 'text-slate-500 cursor-not-allowed' : 'cursor-pointer hover:text-slate-100'}`}
           onDoubleClick={isDisabled ? undefined : onLabelDoubleClick}
           onKeyDown={isDisabled ? undefined : onLabelKeyDown}
           tabIndex={isDisabled ? -1 : 0}
-          title={todo.text}
+          title={todo.text} // Keep title for tooltip on very long text that might still wrap inconveniently
         >
           {todo.text}
         </label>
