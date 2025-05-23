@@ -71,7 +71,7 @@ export function TodoActions({
             title={primaryActionTitle}
             disabled={!isInteractive || primaryActionDisabled}
           >
-            {primaryActionIcon && React.cloneElement(primaryActionIcon, { size: 20 })} {/* Increased icon size */}
+            {primaryActionIcon && (typeof primaryActionIcon.type === 'function' ? React.cloneElement(primaryActionIcon, { ...primaryActionIcon.props, size: 20 }) : primaryActionIcon)} {/* Increased icon size */}
           </Button>
       )}
     </div>

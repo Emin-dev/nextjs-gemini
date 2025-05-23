@@ -74,7 +74,7 @@ export function getPrimaryActionDetails({
       };
     } 
     return { 
-      icon: React.createElement('div'), // Using React.createElement for an empty div
+      icon: null, // Using React.createElement for an empty div
       label: 'Task is deleted',
       title: 'Task is deleted',
       onAction: () => {},
@@ -92,7 +92,7 @@ export function getPrimaryActionDetails({
     };
   }
   return {
-    icon: React.createElement('div'), // Using React.createElement for an empty div
+    icon: null, // Using React.createElement for an empty div
     label: 'No action',
     title: 'No action available in this state/filter',
     onAction: () => {},
