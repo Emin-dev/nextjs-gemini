@@ -32,13 +32,27 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState('');
   const todoAddFormRef = useRef<TodoAddFormHandle>(null);
   const inactivityTimerRef = useRef<NodeJS.Timeout | null>(null);
+  
   const [statusMessage, setStatusMessage] = useState<string>('');
+  const statusMessageTimerRef = useRef<NodeJS.Timeout | null>(null); // Ref for status message timeout
+
   const [undoableActions, setUndoableActions] = useState<Map<number, UndoableActionDetails>>(new Map());
   const undoTimeoutRefs = useRef<Map<number, NodeJS.Timeout>>(new Map());
 
   const focusInput = () => todoAddFormRef.current?.focusInput();
 
-  const clearSpecificUndoAction = (id: number, showConfirmation: boolean = false, message?: string) => {
+  // Helper to set status messages and manage their timeouts
+  const showStatusMessage = (message: string) => {
+    if (statusMessageTimerRef.current) {
+      clearTimeout(statusMessageTimerRef.current);
+    }
+    setStatusMessage(message);
+    statusMessageTimerRef.current = setTimeout(() => {
+      setStatusMessage('');
+    }, STATUS_MESSAGE_DURATION);
+  };
+
+  const clearSpecificUndoAction = (id: number, showConfirmation: boolean = false, confirmationMessage?: string) => {
     const timer = undoTimeoutRefs.current.get(id);
     if (timer) {
       clearTimeout(timer);
@@ -49,9 +63,8 @@ export default function Home() {
       const actionDetails = newState.get(id);
       newState.delete(id);
       if (showConfirmation && actionDetails) {
-        const Lmessage = message || `Task "${actionDetails.originalTodo.text.substring(0, 30)}${actionDetails.originalTodo.text.length > 30 ? '...' : ''}" ${actionDetails.actionType === 'delete' ? 'deletion' : 'restoration'} confirmed.`;
-        setStatusMessage(Lmessage);
-        setTimeout(() => setStatusMessage(''), STATUS_MESSAGE_DURATION);
+        const finalMessage = confirmationMessage || `Task "${actionDetails.originalTodo.text.substring(0, 30)}${actionDetails.originalTodo.text.length > 30 ? '...' : ''}" ${actionDetails.actionType === 'delete' ? 'deletion' : 'restoration'} confirmed.`;
+        showStatusMessage(finalMessage);
       }
       return newState;
     });
@@ -78,12 +91,12 @@ export default function Home() {
     return () => {
       window.removeEventListener('mousemove', resetInactivityTimer);
       window.removeEventListener('keydown', resetInactivityTimer);
-      if (inactivityTimerRef.current) {
-        clearTimeout(inactivityTimerRef.current);
-      }
+      if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
+      if (statusMessageTimerRef.current) clearTimeout(statusMessageTimerRef.current);
       undoTimeoutRefs.current.forEach(timer => clearTimeout(timer));
     };
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Keep resetInactivityTimer out of deps to avoid re-binding on every call if it's not memoized
 
   useEffect(() => {
     if (isClient && initialLoadComplete) {
@@ -94,16 +107,15 @@ export default function Home() {
   const addTodo = (text: string) => {
     const newTodo = { id: Date.now(), text, completed: false, isDeleted: false };
     setTodos(prev => [...prev, newTodo]);
-    if (filter !== 'all') setFilter('all'); // Switch to all if not already there
+    if (filter !== 'all') setFilter('all');
     setSearchQuery('');
-    setStatusMessage(`Task "${text.substring(0, 30)}${text.length > 30 ? '...' : ''}" added.`);
-    setTimeout(() => setStatusMessage(''), STATUS_MESSAGE_DURATION);
+    showStatusMessage(`Task "${text.substring(0, 30)}${text.length > 30 ? '...' : ''}" added.`);
     focusInput();
     resetInactivityTimer();
   };
 
   const toggleTodo = (id: number) => {
-    clearSpecificUndoAction(id); // Clear undo for this specific item if pending
+    clearSpecificUndoAction(id);
     let taskText = '';
     let newCompletedStatus = false;
     setTodos(prev => prev.map(todo => {
@@ -114,8 +126,7 @@ export default function Home() {
       }
       return todo;
     }));
-    setStatusMessage(`Task "${taskText.substring(0, 30)}${taskText.length > 30 ? '...' : ''}" marked as ${newCompletedStatus ? 'complete' : 'incomplete'}.`);
-    setTimeout(() => setStatusMessage(''), STATUS_MESSAGE_DURATION);
+    showStatusMessage(`Task "${taskText.substring(0, 30)}${taskText.length > 30 ? '...' : ''}" marked as ${newCompletedStatus ? 'complete' : 'incomplete'}.`);
     resetInactivityTimer();
   };
 
@@ -123,7 +134,6 @@ export default function Home() {
     const todoToModify = todos.find(t => t.id === id);
     if (!todoToModify) return;
 
-    // Clear any existing undo state for this specific item
     clearSpecificUndoAction(id);
 
     const newIsDeleted = !todoToModify.isDeleted;
@@ -133,19 +143,17 @@ export default function Home() {
 
     setUndoableActions(prev => {
       const newState = new Map(prev);
-      newState.set(id, { id, originalTodo: { ...todoToModify }, actionType });
+      // Preserve original completion status for accurate restore
+      newState.set(id, { id, originalTodo: { ...todoToModify, isDeleted: todoToModify.isDeleted }, actionType });
       return newState;
     });
 
     const timer = setTimeout(() => {
       clearSpecificUndoAction(id, true, `Task "${todoToModify.text.substring(0, 30)}${todoToModify.text.length > 30 ? '...' : ''}" ${actionType === 'delete' ? 'deletion' : 'restoration'} auto-confirmed.`);
     }, UNDO_TIMEOUT);
-
     undoTimeoutRefs.current.set(id, timer);
 
-    setStatusMessage(`Task "${todoToModify.text.substring(0, 30)}${todoToModify.text.length > 30 ? '...' : ''}" marked for ${actionType}.`);
-    setTimeout(() => setStatusMessage(''), STATUS_MESSAGE_DURATION);
-
+    showStatusMessage(`Task "${todoToModify.text.substring(0, 30)}${todoToModify.text.length > 30 ? '...' : ''}" marked for ${actionType}.`);
     focusInput();
     resetInactivityTimer();
   };
@@ -157,14 +165,13 @@ export default function Home() {
     setTodos(prev => prev.map(todo =>
       todo.id === idToUndo ? { ...actionDetails.originalTodo } : todo
     ));
-    setStatusMessage(`Task "${actionDetails.originalTodo.text.substring(0, 30)}${actionDetails.originalTodo.text.length > 30 ? '...' : ''}" ${actionDetails.actionType === 'delete' ? 'restoration' : 'deletion'} undone.`);
-    setTimeout(() => setStatusMessage(''), STATUS_MESSAGE_DURATION);
+    showStatusMessage(`Task "${actionDetails.originalTodo.text.substring(0, 30)}${actionDetails.originalTodo.text.length > 30 ? '...' : ''}" ${actionDetails.actionType === 'delete' ? 'restoration' : 'deletion'} undone.`);
     clearSpecificUndoAction(idToUndo);
     resetInactivityTimer();
   };
 
   const updateTodoText = (id: number, newText: string) => {
-    clearSpecificUndoAction(id); // Clear undo for this specific item if pending
+    clearSpecificUndoAction(id);
     let oldText = '';
     setTodos(prev => prev.map(todo => {
       if (todo.id === id) {
@@ -173,35 +180,23 @@ export default function Home() {
       }
       return todo;
     }));
-    setStatusMessage(`Task "${oldText.substring(0, 30)}${oldText.length > 30 ? '...' : ''}" updated.`);
-    setTimeout(() => setStatusMessage(''), STATUS_MESSAGE_DURATION);
+    showStatusMessage(`Task "${oldText.substring(0, 30)}${oldText.length > 30 ? '...' : ''}" updated.`);
     focusInput();
     resetInactivityTimer();
   };
 
   const permanentlyDeleteTasks = () => {
     const idsToDeletePermanently = todos.filter(todo => todo.isDeleted && !undoableActions.has(todo.id)).map(todo => todo.id);
-
     if (idsToDeletePermanently.length === 0) return;
 
     if (window.confirm(`Are you sure you want to permanently delete ${idsToDeletePermanently.length} task(s)? This action cannot be undone.`)) {
       idsToDeletePermanently.forEach(id => clearSpecificUndoAction(id));
       setTodos(prev => prev.filter(todo => !idsToDeletePermanently.includes(todo.id)));
-
-      setStatusMessage(`${idsToDeletePermanently.length} task(s) permanently deleted.`);
-      setTimeout(() => setStatusMessage(''), STATUS_MESSAGE_DURATION);
+      showStatusMessage(`${idsToDeletePermanently.length} task(s) permanently deleted.`);
       focusInput();
       resetInactivityTimer();
       if (filter === 'deleted') setFilter('all');
     }
-  };
-
-  const isPendingUndo = (todo: Todo) => {
-    return undoableActions.has(todo.id);
-  };
-
-  const getUndoDetails = (id: number): UndoableActionDetails | undefined => {
-    return undoableActions.get(id);
   };
 
   const filteredAndSearchedTodos = useMemo(() => {
@@ -213,16 +208,22 @@ export default function Home() {
       const isEffectivelyDeleted = todo.isDeleted && (!pendingAction || pendingAction.actionType !== 'restore');
       const isEffectivelyVisible = !todo.isDeleted || (pendingAction && pendingAction.actionType === 'delete');
 
-      if (filter === 'all') {
-        return isEffectivelyVisible;
-      } else if (filter === 'active') {
-        return !todo.completed && isEffectivelyVisible;
-      } else if (filter === 'completed') {
-        return todo.completed && isEffectivelyVisible;
-      } else if (filter === 'deleted') {
-        return isEffectivelyDeleted;
+      switch (filter) {
+        case 'all':
+          return isEffectivelyVisible;
+        case 'active':
+          return !todo.completed && isEffectivelyVisible;
+        case 'completed':
+          return todo.completed && isEffectivelyVisible;
+        case 'deleted':
+          return isEffectivelyDeleted;
+        default:
+          // Should not happen with TypeScript, but good for robustness
+          if (typeof filter !== 'undefined' && filter !== null) { // check if filter has an unexpected value
+            console.warn(`Unknown filter type encountered: ${filter}`);
+          }
+          return true; 
       }
-      return true; // Should not happen
     });
 
     if (searchQuery.trim() !== '') {
@@ -265,12 +266,10 @@ export default function Home() {
   const getEmptyStateMessage = () => {
     if (!initialLoadComplete) return null;
     const hasSearch = searchQuery.trim() !== '';
-
     const listEffectivelyEmpty = filteredAndSearchedTodos.length === 0;
+    const totalTodosNotPermanentlyDeleted = todos.filter(todo => !todo.isDeleted || undoableActions.has(todo.id)).length;
 
-    const totalTodosIncludingPending = todos.filter(todo => !todo.isDeleted || undoableActions.has(todo.id)).length;
-
-    if (totalTodosIncludingPending === 0 && undoableActions.size === 0) {
+    if (totalTodosNotPermanentlyDeleted === 0 && undoableActions.size === 0) {
       return { title: "No tasks yet!", message: "Get started by adding a new task above." };
     }
     if (hasSearch && listEffectivelyEmpty) {
@@ -279,11 +278,9 @@ export default function Home() {
     if (!hasSearch && listEffectivelyEmpty) {
       if (filter === 'active') return { title: "No active tasks!", message: "All your tasks are completed or in the deleted list." };
       if (filter === 'completed') return { title: "No completed tasks!", message: "Mark some tasks as completed to see them here." };
-
       if (filter === 'deleted' && deletedTasksCount === 0 && !Array.from(undoableActions.values()).some(action => action.actionType === 'restore')) {
         return { title: "No deleted tasks!", message: "You haven't deleted any tasks yet." };
       }
-
       if (filter === 'all' && totalTasks === 0 && todos.length > 0) {
         return { title: "All tasks are deleted", message: "View them in the 'Deleted' filter or add a new task." };
       }
@@ -367,6 +364,7 @@ export default function Home() {
                   undoableActions={undoableActions}
                   onUndo={handleUndo}
                   undoTimeoutDuration={UNDO_TIMEOUT}
+                  // currentTime={currentTime} // Ensure currentTime is passed if Stage 2 deletion is used
                 />
               )
             )}
@@ -403,8 +401,11 @@ export default function Home() {
         {isClient && statusMessage && (
           <VisibleStatusMessage
             message={statusMessage}
-            duration={STATUS_MESSAGE_DURATION}
-            onDismiss={() => setStatusMessage('')}
+            duration={STATUS_MESSAGE_DURATION} // Duration is handled by showStatusMessage now
+            onDismiss={() => {
+              if (statusMessageTimerRef.current) clearTimeout(statusMessageTimerRef.current);
+              setStatusMessage('');
+            }}
             type="polite"
           />
         )}

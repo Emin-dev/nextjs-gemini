@@ -13,9 +13,7 @@ export interface Todo {
   text: string;
   completed: boolean;
   isDeleted?: boolean;
-  // Fields for multi-stage deletion
-  pendingFinalDeletionTimestamp?: number | null; // Timestamp for 1-min countdown (Stage 2)
-  batchId?: string | null; // To group tasks for global restore (Stage 4)
+  // Removed Stage 2 deletion fields: pendingFinalDeletionTimestamp, batchId
 }
 
 interface TodoItemProps {
@@ -26,12 +24,8 @@ interface TodoItemProps {
   undoableAction: UndoableActionDetails | null; 
   onUndo: (id: number) => void; // For Stage 1 undo
   undoTimeoutDuration: number;
-  // Props for Stage 2 (1-minute grace period)
-  onRestoreDuringGracePeriod?: (id: number) => void; // New: For restoring during 1-min countdown
-  currentTime?: number; // New: Passed down from page to help sync countdowns
+  // Removed Stage 2 props: onRestoreDuringGracePeriod, currentTime
 }
-
-// ... (rest of the icons and component logic will be updated later)
 
 const EditIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-labelledby="editIconTitle">
@@ -65,9 +59,7 @@ export function TodoItem({
   onUpdateText, 
   undoableAction, 
   onUndo, 
-  undoTimeoutDuration, 
-  onRestoreDuringGracePeriod,
-  currentTime
+  undoTimeoutDuration 
 }: TodoItemProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(todo.text);
@@ -78,10 +70,10 @@ export function TodoItem({
   const itemRef = useRef<HTMLLIElement>(null);
   
   const [stage1UndoCountdown, setStage1UndoCountdown] = useState(0);
-  const [stage2GraceCountdown, setStage2GraceCountdown] = useState(0);
+  // Removed stage2GraceCountdown
 
   const isStage1UndoActive = undoableAction?.id === todo.id && undoableAction?.actionType === 'delete';
-  const isStage2GraceActive = todo.isDeleted && todo.pendingFinalDeletionTimestamp && currentTime && currentTime < todo.pendingFinalDeletionTimestamp;
+  // Removed isStage2GraceActive
 
   // Effect for Stage 1 Undo Countdown (20 seconds)
   useEffect(() => {
@@ -97,31 +89,12 @@ export function TodoItem({
         });
       }, 1000);
       return () => clearInterval(interval);
+    }\ else {
+      setStage1UndoCountdown(0); // Reset countdown if not active
     }
   }, [isStage1UndoActive, todo.id, undoableAction, undoTimeoutDuration]);
 
-  // Effect for Stage 2 Grace Period Countdown (1 minute)
-  useEffect(() => {
-    if (isStage2GraceActive && todo.pendingFinalDeletionTimestamp && currentTime) {
-      const timeLeft = Math.max(0, Math.ceil((todo.pendingFinalDeletionTimestamp - currentTime) / 1000));
-      setStage2GraceCountdown(timeLeft);
-      
-      if (timeLeft > 0) {
-        const interval = setInterval(() => {
-          setStage2GraceCountdown(prev => {
-            if (prev <= 1) {
-              clearInterval(interval);
-              // Parent component (page.tsx) will handle actual removal based on timestamp
-              return 0;
-            }
-            return prev - 1;
-          });
-        }, 1000);
-        return () => clearInterval(interval);
-      }
-    }
-  }, [isStage2GraceActive, todo.pendingFinalDeletionTimestamp, currentTime]);
-
+  // Removed Effect for Stage 2 Grace Period Countdown
 
   useEffect(() => {
     if (isEditing) {
@@ -134,8 +107,7 @@ export function TodoItem({
     if (!isEditing && todo.text !== editText) {
       setEditText(todo.text);
     }
-  // Removed editText from the dependency array
-  }, [todo.text, isEditing]);
+  }, [todo.text, isEditing]); // editText removed from deps previously
 
   useEffect(() => {
     if (todo.text !== prevTodoText.current || todo.completed !== prevTodoCompleted.current) {
@@ -153,7 +125,7 @@ export function TodoItem({
   }, [todo.text, todo.completed]);
 
   const handleToggle = () => {
-    if (isStage1UndoActive || isStage2GraceActive) return; // Prevent toggle if in undo/grace
+    if (isStage1UndoActive) return; // Prevent toggle if in undo/grace
     onToggle(todo.id);
   }
 
@@ -161,9 +133,9 @@ export function TodoItem({
     const trimmedText = editText.trim();
     setIsEditing(false);
     if (trimmedText === '') {
-      if (!isStage1UndoActive && !isStage2GraceActive) onRemove(todo.id); // Soft delete if empty
+      if (!isStage1UndoActive) onRemove(todo.id); // Soft delete if empty
     } else if (trimmedText !== todo.text) {
-      if (!isStage1UndoActive && !isStage2GraceActive) onUpdateText(todo.id, trimmedText);
+      if (!isStage1UndoActive) onUpdateText(todo.id, trimmedText);
     } 
   };
 
@@ -180,7 +152,7 @@ export function TodoItem({
   const handleLabelKeyDown = (e: KeyboardEvent<HTMLLabelElement>) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
-      if (!todo.isDeleted && !isStage1UndoActive && !isStage2GraceActive) {
+      if (!todo.isDeleted && !isStage1UndoActive) {
         setEditText(todo.text);
         setIsEditing(true);
       }
@@ -197,19 +169,14 @@ export function TodoItem({
     'focus-within:shadow-lg focus-within:ring-2 focus-within:ring-sky-500 focus-within:ring-offset-2 focus-within:ring-offset-slate-800',
     'transition-all',
     'duration-300',
-    (todo.isDeleted || isStage1UndoActive) ? 'opacity-70' : '',
-    justSaved && !isStage1UndoActive && !isStage2GraceActive ? 'border-sky-500 shadow-sky-md' : 'border-slate-600',
-    isStage1UndoActive ? 'ring-2 ring-yellow-500 ring-offset-2 ring-offset-slate-800' : '',
-    isStage2GraceActive ? 'ring-2 ring-red-600 ring-offset-2 ring-offset-slate-800 animate-pulse' : ''
+    (todo.isDeleted && !isStage1UndoActive) ? 'opacity-50' : '', // Adjusted opacity for soft-deleted non-undo items
+    isStage1UndoActive ? 'opacity-70 ring-2 ring-yellow-500 ring-offset-2 ring-offset-slate-800' : '',
+    justSaved && !isStage1UndoActive ? 'border-sky-500 shadow-sky-md' : 'border-slate-600',
+    // Removed isStage2GraceActive class
   ].join(' ');
 
-  const showEditButton = !isEditing && !todo.isDeleted && !isStage1UndoActive && !isStage2GraceActive;
-  // The main remove/restore button logic:
-  // 1. If Stage 1 Undo is active: Hide this button (Undo button shown below)
-  // 2. If Stage 2 Grace is active: Hide this button (Restore button shown below)
-  // 3. If task is soft-deleted (and not in Stage 1 or 2): Show RestoreIcon (calls onRemove which flips isDeleted)
-  // 4. If task is active: Show RemoveIcon (calls onRemove to start Stage 1)
-  const showMainActionButtons = !isStage1UndoActive && !isStage2GraceActive;
+  const showEditButton = !isEditing && !todo.isDeleted && !isStage1UndoActive;
+  const showMainActionButtons = !isStage1UndoActive;
 
   return (
     <Card<"li"> 
@@ -222,7 +189,6 @@ export function TodoItem({
       <CardContent className="p-4 flex flex-col gap-3">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center flex-grow min-w-0">
-            {/* Image can be optional or have a placeholder if needed */}
             <Image
               src={`https://picsum.photos/seed/${todo.id}/600`}
               alt={todo.isDeleted ? `Image for deleted task: ${todo.text}` : `Image for task: ${todo.text}`}
@@ -239,7 +205,7 @@ export function TodoItem({
                   onCheckedChange={handleToggle}
                   className="mr-3 border-slate-500 data-[state=checked]:bg-sky-600 data-[state=checked]:border-sky-600 flex-shrink-0 h-5 w-5 focus:ring-sky-500 focus:ring-offset-slate-800"
                   aria-label={todo.completed ? `Mark task "${todo.text}" as incomplete` : `Mark task "${todo.text}" as complete`}
-                  disabled={!!todo.isDeleted || isStage1UndoActive || isStage2GraceActive || isEditing}
+                  disabled={!!todo.isDeleted || isStage1UndoActive || isEditing}
                 />
                 {isEditing ? (
                   <Input
@@ -247,27 +213,27 @@ export function TodoItem({
                     type="text"
                     value={editText}
                     onChange={(e) => setEditText(e.target.value)}
-                    onBlur={handleSave} // handleSave checks if already in undo/grace
+                    onBlur={handleSave}
                     onKeyDown={handleInputKeyDown}
                     className="flex-grow bg-slate-600 border-slate-500 text-white h-9 text-base p-2 rounded focus:ring-sky-500 focus:border-sky-500"
-                    disabled={!!todo.isDeleted || isStage1UndoActive || isStage2GraceActive} 
+                    disabled={!!todo.isDeleted || isStage1UndoActive} 
                     aria-label={`Edit text for task: ${todo.text}`}
                     id={labelId}
                   />
                 ) : (
                   <label
                     id={labelId}
-                    htmlFor={checkboxId} // Clicking label toggles checkbox, if not disabled
-                    className={`text-slate-200 text-lg 
-                      ${todo.completed && !isStage2GraceActive ? 'line-through text-slate-500' : ''} 
-                      ${(!!todo.isDeleted || isStage1UndoActive || isStage2GraceActive) ? 'text-slate-500 cursor-not-allowed' : 'cursor-pointer hover:text-slate-100'}`}
+                    htmlFor={checkboxId}
+                    className={`text-slate-200 text-lg truncate 
+                      ${todo.completed && !isStage1UndoActive ? 'line-through text-slate-500' : ''} 
+                      ${(!!todo.isDeleted && !isStage1UndoActive) ? 'text-slate-500 cursor-not-allowed' : 'cursor-pointer hover:text-slate-100'}`}
                     onDoubleClick={() => {
-                        if (!todo.isDeleted && !isStage1UndoActive && !isStage2GraceActive) {
+                        if (!todo.isDeleted && !isStage1UndoActive) {
                             setEditText(todo.text); setIsEditing(true);
                         }
                     }}
                     onKeyDown={handleLabelKeyDown}
-                    tabIndex={(!!todo.isDeleted || isStage1UndoActive || isStage2GraceActive) ? -1 : 0}
+                    tabIndex={(!todo.isDeleted && !isStage1UndoActive) ? 0 : -1}
                     title={todo.text}
                   >
                     {todo.text}
@@ -290,15 +256,15 @@ export function TodoItem({
             )}
             {showMainActionButtons && (
                 <Button
-                  onClick={() => onRemove(todo.id)} // For soft-delete or for restoring from soft-delete
+                  onClick={() => onRemove(todo.id)}
                   variant="ghost"
                   className={`p-2 h-auto focus:ring-offset-slate-800 
-                    ${todo.isDeleted ? 'text-yellow-400 hover:text-yellow-300 focus:ring-yellow-500' /* Restore from soft delete */ 
-                                     : 'text-red-400 hover:text-red-300 focus:ring-red-500' /* Soft delete */}`}
-                  aria-label={todo.isDeleted ? `Restore task: ${todo.text}` : `Delete task: ${todo.text}`}
-                  title={todo.isDeleted ? `Restore task: ${todo.text}` : `Delete task: ${todo.text}`}
+                    ${todo.isDeleted && !isStage1UndoActive ? 'text-yellow-400 hover:text-yellow-300 focus:ring-yellow-500' 
+                                     : 'text-red-400 hover:text-red-300 focus:ring-red-500'}`}
+                  aria-label={(todo.isDeleted && !isStage1UndoActive) ? `Restore task: ${todo.text}` : `Delete task: ${todo.text}`}
+                  title={(todo.isDeleted && !isStage1UndoActive) ? `Restore task: ${todo.text}` : `Delete task: ${todo.text}`}
                 >
-                  {todo.isDeleted ? <RestoreIcon /> : <RemoveIcon />}
+                  {(todo.isDeleted && !isStage1UndoActive) ? <RestoreIcon /> : <RemoveIcon />}
                 </Button>
             )}
           </div>
@@ -320,23 +286,7 @@ export function TodoItem({
             </Button>
           </div>
         )}
-
-        {/* Stage 2: Grace Period Restore Prompt (1 min) */}
-        {isStage2GraceActive && onRestoreDuringGracePeriod && (
-          <div className="mt-2 p-3 bg-red-900/70 border border-red-700 rounded-md flex justify-between items-center animate-pulse">
-            <p className="text-sm text-red-200">
-              Final deletion in {stage2GraceCountdown}s...
-            </p>
-            <Button 
-              onClick={() => onRestoreDuringGracePeriod(todo.id)} 
-              variant="outline"
-              size="sm"
-              className="text-red-200 border-red-400 hover:bg-red-700 hover:text-red-100 focus:ring-red-500"
-            >
-              Restore Task
-            </Button>
-          </div>
-        )}
+        {/* Removed Stage 2 Grace Period Restore Prompt */}
       </CardContent>
     </Card>
   );

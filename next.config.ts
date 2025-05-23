@@ -11,6 +11,12 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  experimental: {
+    allowedDevOrigins: [
+      "your-cloud-workstation-dev-url.com", // TODO: Replace with your actual Cloud Workstations domain
+      // You can add more local development domains here if needed, e.g. "localhost:3001"
+    ],
+  }
   /* config options here */
 };
 
