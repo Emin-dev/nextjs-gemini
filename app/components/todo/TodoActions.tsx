@@ -13,11 +13,11 @@ interface TodoActionsProps {
   showMainActionButtons: boolean;
   onEdit: () => void;
   onPrimaryAction: () => void;
-  primaryActionIcon: React.ReactElement;
+  primaryActionIcon: React.ReactElement | null; // Allow null for icon
   primaryActionLabel: string;
   primaryActionTitle: string;
   primaryActionDisabled?: boolean;
-  primaryActionType: PrimaryActionType; // Added this prop
+  primaryActionType: PrimaryActionType; 
 }
 
 export function TodoActions({
@@ -34,13 +34,13 @@ export function TodoActions({
   primaryActionType
 }: TodoActionsProps) {
 
-  let buttonColorClasses = 'text-red-400 hover:text-red-300 focus:ring-red-500'; // Default to delete color
-  if (primaryActionType === 'restore-from-trash' || primaryActionType === 'undo-initial-delete') { // Added undo-initial-delete for yellow
+  let buttonColorClasses = 'text-red-400 hover:text-red-300 focus:ring-red-500'; 
+  if (primaryActionType === 'restore-from-trash' || primaryActionType === 'undo-initial-delete') { 
     buttonColorClasses = 'text-yellow-400 hover:text-yellow-300 focus:ring-yellow-500';
   } else if (primaryActionType === 'undo-pending-deletion') {
     buttonColorClasses = 'text-green-400 hover:text-green-300 focus:ring-green-500';
   } else if (primaryActionType === 'disabled') {
-    buttonColorClasses = 'text-slate-500'; // Or some other disabled styling
+    buttonColorClasses = 'text-slate-500'; 
   }
 
   return (
@@ -69,7 +69,7 @@ export function TodoActions({
             title={primaryActionTitle}
             disabled={!isInteractive || primaryActionDisabled}
           >
-            {primaryActionIcon}
+            {primaryActionIcon} {/* This will now correctly render null if primaryActionIcon is null, resulting in no icon */}
           </Button>
       )}
     </div>
