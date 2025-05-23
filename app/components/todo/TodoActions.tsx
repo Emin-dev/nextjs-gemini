@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Edit3 } from 'lucide-react';
 
 // Define the type for primaryActionType
-export type PrimaryActionType = 'initial-delete' | 'restore-from-trash' | 'undo-pending-deletion' | 'disabled';
+export type PrimaryActionType = 'initial-delete' | 'restore-from-trash' | 'undo-pending-deletion' | 'disabled' | 'undo-initial-delete';
 
 interface TodoActionsProps {
   todoText: string;
@@ -35,7 +35,7 @@ export function TodoActions({
 }: TodoActionsProps) {
 
   let buttonColorClasses = 'text-red-400 hover:text-red-300 focus:ring-red-500'; // Default to delete color
-  if (primaryActionType === 'restore-from-trash') {
+  if (primaryActionType === 'restore-from-trash' || primaryActionType === 'undo-initial-delete') { // Added undo-initial-delete for yellow
     buttonColorClasses = 'text-yellow-400 hover:text-yellow-300 focus:ring-yellow-500';
   } else if (primaryActionType === 'undo-pending-deletion') {
     buttonColorClasses = 'text-green-400 hover:text-green-300 focus:ring-green-500';

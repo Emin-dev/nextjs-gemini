@@ -1,22 +1,23 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import type { EmptyingTrashBatchDetails, FilterValue } from '../../types'; // Ensure FilterValue is imported if used explicitly
-import { STAGE_4_GLOBAL_RESTORE_WINDOW } from '../../lib/constants'; // For restore all button timer
+import type { EmptyingTrashBatchDetails, FilterValue } from '../../types';
+// STAGE_4_GLOBAL_RESTORE_WINDOW is implicitly handled by showGlobalRestoreButton and globalRestoreTimeRemainingString props
 
 interface TodoFooterProps {
   activeTasksCount: number;
   softDeletedAndStage2Count: number;
-  filter: FilterValue; // Use FilterValue type
+  filter: FilterValue;
   emptyingTrashBatch: EmptyingTrashBatchDetails | null;
   itemsEligibleForEmptyTrash: number;
   onInitiateEmptyTrash: () => void;
   onRestoreAllPendingDeletion: () => void;
-  getGlobalRestoreTimeRemaining: () => string; // This function will format the time
+  globalRestoreTimeRemainingString: string; // Direct string from app/page.tsx
+  showGlobalRestoreButton: boolean; // Direct boolean from app/page.tsx
   isClient: boolean;
   initialLoadComplete: boolean;
   isActionInProgress: boolean;
-  currentTime: number; // Pass current time to determine if restore button is active
+  // currentTime: number; // No longer explicitly needed here if button visibility is passed as prop
 }
 
 export function TodoFooter({
@@ -27,20 +28,24 @@ export function TodoFooter({
   itemsEligibleForEmptyTrash,
   onInitiateEmptyTrash,
   onRestoreAllPendingDeletion,
-  getGlobalRestoreTimeRemaining, // This is now just for display formatting
+  globalRestoreTimeRemainingString,
+  showGlobalRestoreButton,
   isClient,
   initialLoadComplete,
   isActionInProgress,
-  currentTime
 }: TodoFooterProps) {
   if (!isClient || !initialLoadComplete) return null;
 
-  const showEmptyTrashButton = filter === 'deleted' && 
-                               !emptyingTrashBatch && 
-                               itemsEligibleForEmptyTrash > 0;
+  // Button to start the "Empty Trash" process (1-minute individual timers)
+  const displayEmptyTrashButton = 
+    filter === 'deleted' && 
+    itemsEligibleForEmptyTrash > 0 &&
+    (!emptyingTrashBatch || emptyingTrashBatch.isRestored || emptyingTrashBatch.allIndividualTimersEndedForBatch);
+    // Show if in deleted filter, items are eligible, AND
+    // (no batch active OR current batch was restored OR current batch finished all timers (allowing a new one))
 
-  const showRestoreAllButton = emptyingTrashBatch && 
-                               emptyingTrashBatch.initiatedAt + STAGE_4_GLOBAL_RESTORE_WINDOW > currentTime;
+  // Green button to restore the entire batch after all individual 1-min timers have ended.
+  // Visibility is now controlled by the `showGlobalRestoreButton` prop from app/page.tsx
 
   return (
     <div className="text-xs sm:text-sm text-slate-500 flex flex-col sm:flex-row justify-between items-center gap-2 sm:gap-4 pt-4 border-t border-slate-700">
@@ -54,26 +59,28 @@ export function TodoFooter({
         )}
       </div>
       <div className="flex gap-2">
-        {showEmptyTrashButton && (
+        {displayEmptyTrashButton && (
             <Button
             onClick={onInitiateEmptyTrash}
             variant="destructive"
             size="sm"
             className="bg-red-500 hover:bg-red-600 text-white font-semibold focus:ring-red-400"
             aria-label={`Initiate final deletion for ${itemsEligibleForEmptyTrash} tasks`}
-            disabled={isActionInProgress || itemsEligibleForEmptyTrash === 0}
+            disabled={isActionInProgress && !(emptyingTrashBatch && emptyingTrashBatch.isRestored)}
             >
             Empty Trash ({itemsEligibleForEmptyTrash})
             </Button>
         )}
-        {showRestoreAllButton && emptyingTrashBatch && (
+        {showGlobalRestoreButton && emptyingTrashBatch && !emptyingTrashBatch.isRestored && (
             <Button
                 onClick={onRestoreAllPendingDeletion}
                 variant="default"
                 size="sm"
                 className="bg-green-500 hover:bg-green-600 text-white font-semibold focus:ring-green-400"
+                aria-label={`Restore ${emptyingTrashBatch.tasksSnapshot.length} tasks from recently emptied batch. ${globalRestoreTimeRemainingString} left.`}
+                disabled={isActionInProgress && !showGlobalRestoreButton} // Disable if another action is broadly in progress, unless this button IS the current main available action
             >
-                Restore All ({emptyingTrashBatch.tasksSnapshot.length}) - {getGlobalRestoreTimeRemaining()}
+                Restore Batch ({emptyingTrashBatch.tasksSnapshot.length}) - {globalRestoreTimeRemainingString}
             </Button>
         )}
       </div>

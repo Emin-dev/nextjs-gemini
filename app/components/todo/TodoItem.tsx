@@ -7,10 +7,10 @@ import type { Todo, UndoableActionDetails, EmptyingTrashBatchDetails } from '../
 import { useSaveFeedback } from '../../hooks/useSaveFeedback';
 import { useTodoEditing } from '../../hooks/useTodoEditing';
 import { TodoDisplay } from './TodoDisplay';
-import { TodoActions, type PrimaryActionType } from './TodoActions'; // Import PrimaryActionType
+import { TodoActions, type PrimaryActionType } from './TodoActions';
 import { UndoBanner } from './UndoBanner';
 import { Trash2, Undo2, RotateCcw } from 'lucide-react';
-import { FILTER_SWITCH_DELAY, UNDO_TIMEOUT } from '../../lib/constants';
+import { FILTER_SWITCH_DELAY, UNDO_TIMEOUT, STAGE_2_GRACE_PERIOD_DURATION } from '../../lib/constants';
 
 interface TodoItemProps {
   todo: Todo;
@@ -20,8 +20,8 @@ interface TodoItemProps {
   undoableAction: UndoableActionDetails | null; 
   onUndo: (id: number) => void; 
   undoTimeoutDuration: number; 
-  onRestorePendingDeletion?: (id: number) => void; 
-  currentTime?: number;
+  onRestorePendingDeletion?: (id: number) => void; // For 1-min undo
+  currentTime: number; 
   emptyingTrashBatch: EmptyingTrashBatchDetails | null;
 }
 
@@ -42,31 +42,35 @@ export function TodoItem({
 
   const isYellowBorderPhase = useMemo(() => {
     if (!todo.markedForDeletionAt || !currentTime) return false;
-    return !todo.isDeleted && (currentTime - todo.markedForDeletionAt < FILTER_SWITCH_DELAY) && undoableAction?.actionType === 'delete';
-  }, [todo.markedForDeletionAt, todo.isDeleted, currentTime, undoableAction]);
+    const timeSinceMarked = currentTime - todo.markedForDeletionAt;
+    return !todo.isDeleted && timeSinceMarked < (UNDO_TIMEOUT + FILTER_SWITCH_DELAY) && undoableAction?.actionType === 'delete' && undoableAction.id === todo.id;
+  }, [todo.markedForDeletionAt, todo.isDeleted, currentTime, undoableAction, UNDO_TIMEOUT, FILTER_SWITCH_DELAY]);
 
   const yellowBorderCountdown = useMemo(() => {
-    if (!isYellowBorderPhase || !todo.markedForDeletionAt || !currentTime) return 0;
-    return Math.max(0, Math.ceil((FILTER_SWITCH_DELAY - (currentTime - todo.markedForDeletionAt)) / 1000));
-  }, [isYellowBorderPhase, todo.markedForDeletionAt, currentTime]);
+    if (!isYellowBorderPhase || !todo.markedForDeletionAt || !currentTime || !undoableAction) return 0;
+    const timeSinceUndoActionStarted = currentTime - undoableAction.timestamp;
+    return Math.max(0, Math.ceil((UNDO_TIMEOUT - timeSinceUndoActionStarted) / 1000));
+  }, [isYellowBorderPhase, todo.markedForDeletionAt, currentTime, undoableAction, UNDO_TIMEOUT]);
 
   const isRedBorderPhase = useMemo(() => {
-    if (!todo.pendingFinalDeletionTimestamp || !currentTime || !emptyingTrashBatch) return false;
-    return todo.batchId === emptyingTrashBatch.batchId && currentTime < todo.pendingFinalDeletionTimestamp;
-  }, [todo.pendingFinalDeletionTimestamp, todo.batchId, currentTime, emptyingTrashBatch]);
+    if (!todo.pendingFinalDeletionTimestamp || !currentTime || !emptyingTrashBatch || !todo.stage2BatchId) return false;
+    return todo.stage2BatchId === emptyingTrashBatch.batchId && currentTime < todo.pendingFinalDeletionTimestamp;
+  }, [todo.pendingFinalDeletionTimestamp, todo.stage2BatchId, currentTime, emptyingTrashBatch]);
 
   const redBorderCountdown = useMemo(() => {
     if (!isRedBorderPhase || !todo.pendingFinalDeletionTimestamp || !currentTime) return 0;
-    return Math.max(0, Math.ceil((todo.pendingFinalDeletionTimestamp - currentTime) / 1000));
+    const timeRemaining = todo.pendingFinalDeletionTimestamp - currentTime;
+    return Math.max(0, Math.ceil(timeRemaining / 1000));
   }, [isRedBorderPhase, todo.pendingFinalDeletionTimestamp, currentTime]);
 
   const isStage1UndoActive = useMemo(() => {
-    return undoableAction?.actionType === 'delete' && !!todo.markedForDeletionAt;
-  }, [undoableAction, todo.markedForDeletionAt]);
+    return undoableAction?.id === todo.id && undoableAction?.actionType === 'delete' && !!todo.markedForDeletionAt;
+  }, [undoableAction, todo.id, todo.markedForDeletionAt]);
   
   const stage1UndoCountdown = useMemo(() => {
     if (!isStage1UndoActive || !undoableAction || !currentTime) return 0;
-    return Math.max(0, Math.ceil((undoTimeoutDuration - (currentTime - undoableAction.timestamp)) / 1000));
+    const timeSinceAction = currentTime - undoableAction.timestamp;
+    return Math.max(0, Math.ceil((undoTimeoutDuration - timeSinceAction) / 1000));
   }, [isStage1UndoActive, undoableAction, currentTime, undoTimeoutDuration]);
 
   const isUndoOrDeletionPhaseActive = isYellowBorderPhase || isRedBorderPhase || isStage1UndoActive;
@@ -116,55 +120,68 @@ export function TodoItem({
     'transition-all duration-300',
     'w-full',
     (todo.isDeleted && !isYellowBorderPhase && !isRedBorderPhase && !isStage1UndoActive) ? 'opacity-60' : '',
-    isYellowBorderPhase ? 'ring-2 ring-yellow-400 ring-offset-1 ring-offset-slate-800 animate-pulseSlow' : '',
+    isStage1UndoActive ? 'ring-2 ring-yellow-400 ring-offset-1 ring-offset-slate-800 animate-pulseSlow' : '',
     isRedBorderPhase ? 'ring-2 ring-red-500 ring-offset-1 ring-offset-slate-800 animate-pulse' : '',
     justSaved && isInteractive ? 'border-sky-500 shadow-sky-md' : 'border-slate-600',
     isInteractive && !todo.isDeleted && !todo.markedForDeletionAt && !todo.pendingFinalDeletionTimestamp ? 'cursor-pointer' : '',
   ].filter(Boolean).join(' ');
 
   const showEditButton = !isEditing && !todo.isDeleted && !isUndoOrDeletionPhaseActive;
-  const showMainActionButtons = !isUndoOrDeletionPhaseActive;
+  const showMainActionButtons = !isUndoOrDeletionPhaseActive || isRedBorderPhase;
 
   let primaryActionIcon: React.ReactElement;
   let primaryActionLabel: string;
   let primaryActionTitle: string;
   let onPrimaryAction: () => void;
   let primaryActionDisabled = false;
-  let currentActionType: PrimaryActionType = 'initial-delete'; // Default
+  let currentActionType: PrimaryActionType = 'initial-delete'; 
 
   if (isRedBorderPhase && onRestorePendingDeletion) {
     primaryActionIcon = <RotateCcw size={16} />;
-    primaryActionLabel = `Undo permanent delete: ${todo.text}`;
+    primaryActionLabel = `Undo permanent delete for: ${todo.text}`;
     primaryActionTitle = `Undo permanent delete (${redBorderCountdown}s left)`;
     onPrimaryAction = () => onRestorePendingDeletion(todo.id);
     currentActionType = 'undo-pending-deletion';
-  } else if (todo.isDeleted && !isYellowBorderPhase && !isRedBorderPhase && undoableAction?.actionType === 'restore' && onUndo) {
-    // This case means the *original* undoable action was to 'restore' this item (which is currently isDeleted:true).
-    // So the button should offer to undo that restoration, effectively re-deleting it (softly).
-    primaryActionIcon = <Trash2 size={16} />;
-    primaryActionLabel = `Undo restoration for: ${todo.text}`;
-    primaryActionTitle = `Undo restoration (will re-delete task)`;
-    onPrimaryAction = () => onUndo(todo.id); // onUndo will use the originalTodo from actionDetails to revert.
-    currentActionType = 'initial-delete'; // Visually like a delete button
-  } else if (todo.isDeleted && !isYellowBorderPhase && !isRedBorderPhase) {
+  } else if (isStage1UndoActive && onUndo) {
     primaryActionIcon = <Undo2 size={16} />;
-    primaryActionLabel = `Restore task: ${todo.text}`;
-    primaryActionTitle = `Restore task from trash`;
-    onPrimaryAction = () => onUndo(todo.id); // This will trigger onUndo with an actionType 'restore'
-    currentActionType = 'restore-from-trash'; 
-  } else if (isYellowBorderPhase) {
+    primaryActionLabel = `Undo delete for: ${todo.text}`;
+    primaryActionTitle = `Undo delete (${stage1UndoCountdown}s left)`;
+    onPrimaryAction = () => onUndo(todo.id);
+    currentActionType = 'undo-initial-delete';
+  } else if (todo.isDeleted && !isRedBorderPhase) {
+    if (undoableAction && undoableAction.actionType === 'restore' && undoableAction.id === todo.id && onUndo) {
+      primaryActionIcon = <Trash2 size={16} />;
+      primaryActionLabel = `Undo restoration of: ${todo.text}`;
+      primaryActionTitle = `Undo restoration (re-deletes task to trash)`;
+      onPrimaryAction = () => onUndo(todo.id);
+      currentActionType = 'initial-delete'; 
+    } else if (onUndo) {
+      primaryActionIcon = <Undo2 size={16} />;
+      primaryActionLabel = `Restore task: ${todo.text}`;
+      primaryActionTitle = `Restore task from trash`;
+      onPrimaryAction = () => onUndo(todo.id);
+      currentActionType = 'restore-from-trash'; 
+    } else {
+        primaryActionIcon = <Trash2 size={16} />;
+        primaryActionLabel = `Task is deleted`;
+        primaryActionTitle = `Task is deleted`;
+        onPrimaryAction = () => {};
+        primaryActionDisabled = true;
+        currentActionType = 'disabled';
+    }
+  } else if (!todo.isDeleted && !isRedBorderPhase && !isStage1UndoActive) {
     primaryActionIcon = <Trash2 size={16} />;
-    primaryActionLabel = `Deleting...`;
-    primaryActionTitle = `Task is being deleted (yellow phase)`;
+    primaryActionLabel = `Delete task: ${todo.text}`;
+    primaryActionTitle = `Delete task`;
+    onPrimaryAction = () => onRemove(todo.id);
+    currentActionType = 'initial-delete';
+  } else {
+    primaryActionIcon = <Trash2 size={16} />;
+    primaryActionLabel = `No action`;
+    primaryActionTitle = `No action available`;
     onPrimaryAction = () => {};
     primaryActionDisabled = true;
     currentActionType = 'disabled';
-  } else {
-    primaryActionIcon = <Trash2 size={16} />;
-    primaryActionLabel = `Delete task: ${todo.text}`;
-    primaryActionTitle = `Delete task (will start yellow phase)`;
-    onPrimaryAction = () => onRemove(todo.id);
-    currentActionType = 'initial-delete';
   }
 
   if (!todo) return null;
@@ -179,6 +196,15 @@ export function TodoItem({
       <Card className={cardClasses} onClick={handleCardClick}>
         <CardContent className="p-2 sm:p-3 flex flex-col gap-1 sm:gap-2"> 
           <div className="flex items-center justify-between gap-1 sm:gap-2"> 
+            <Image
+              src={`https://picsum.photos/seed/${todo.id}/600`}
+              alt={`Visual cue for task: ${todo.text}`}
+              width={600}
+              height={600}
+              className="rounded-md mr-2 sm:mr-3 flex-shrink-0 object-cover h-16 w-16 sm:h-20 sm:w-20"
+              priority={false}
+              data-no-toggle
+            />
             <div className="flex flex-col flex-grow min-w-0">
               <TodoDisplay
                 todo={todo}
@@ -213,18 +239,19 @@ export function TodoItem({
               primaryActionLabel={primaryActionLabel}
               primaryActionTitle={primaryActionTitle}
               primaryActionDisabled={primaryActionDisabled}
-              primaryActionType={currentActionType} // Pass the determined type
+              primaryActionType={currentActionType}
             />
           </div>
           
           <UndoBanner 
             todo={todo}
             undoableAction={undoableAction}
-            onUndo={() => onUndo(todo.id)}
-            onRestorePendingDeletion={onRestorePendingDeletion && isRedBorderPhase ? () => onRestorePendingDeletion(todo.id) : undefined}
+            onUndo={isStage1UndoActive && onUndo ? () => onUndo(todo.id) : undefined}
+            onRestorePendingDeletion={isRedBorderPhase && onRestorePendingDeletion ? () => onRestorePendingDeletion(todo.id) : undefined}
             currentTime={currentTime}
             undoTimeoutDuration={undoTimeoutDuration}
-            filterSwitchDelay={FILTER_SWITCH_DELAY}
+            filterSwitchDelay={FILTER_SWITCH_DELAY} // Added this prop back
+            stage2GracePeriodDuration={STAGE_2_GRACE_PERIOD_DURATION}
             isYellowBorderPhase={isYellowBorderPhase}
             yellowBorderCountdown={yellowBorderCountdown}
             isRedBorderPhase={isRedBorderPhase}

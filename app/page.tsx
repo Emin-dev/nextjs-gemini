@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { TodoList } from './components/todo/TodoList';
 import { TodoAddForm, type TodoAddFormHandle } from './components/todo/TodoAddForm';
-import type { Todo, UndoableActionDetails, FilterValue, EmptyingTrashBatchDetails } from './types';
+import type { Todo, FilterValue, EmptyingTrashBatchDetails } from './types';
 import { TodoListSkeleton } from './components/todo/TodoListSkeleton';
 import { VisibleStatusMessage } from './components/ui/StatusMessage';
 import { TodoControls } from './components/layout/TodoControls';
@@ -12,13 +12,10 @@ import { TodoFooter } from './components/layout/TodoFooter';
 import {
   INACTIVITY_TIMEOUT,
   STATUS_MESSAGE_DURATION,
-  UNDO_TIMEOUT, // Using this for red-border items
-  STAGE_4_GLOBAL_RESTORE_WINDOW, // This is GREEN_BUTTON_RESTORE_WINDOW
-  AUTO_FINAL_DELETE_INTERVAL,
-  CURRENT_TIME_UPDATE_INTERVAL,
-  FILTER_SWITCH_DELAY // For yellow border phase
+  UNDO_TIMEOUT, 
+  STAGE_4_GLOBAL_RESTORE_WINDOW,
+  CURRENT_TIME_UPDATE_INTERVAL
 } from './lib/constants';
-import { getGlobalRestoreTimeRemaining } from './lib/utils';
 import { useTodoManagement } from './hooks/useTodoManagement';
 
 export default function Home() {
@@ -32,7 +29,6 @@ export default function Home() {
   const todoAddFormRef = useRef<TodoAddFormHandle>(null);
   const inactivityTimerRef = useRef<NodeJS.Timeout | null>(null);
   const statusMessageTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const autoFinalDeleteIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const globalRestoreWindowTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   const [emptyingTrashBatch, setEmptyingTrashBatch] = useState<EmptyingTrashBatchDetails | null>(null);
@@ -54,17 +50,30 @@ export default function Home() {
     resetInactivityTimer(); 
   }, [resetInactivityTimer]);
 
+  const handleSetNewEmptyingTrashBatch = useCallback((batchDetails: EmptyingTrashBatchDetails | null) => {
+    setEmptyingTrashBatch(batchDetails);
+  }, []);
+
+  const handleUpdateExistingEmptyingTrashBatch = useCallback((batchId: string, updates: Partial<Omit<EmptyingTrashBatchDetails, 'batchId' | 'taskIdsInBatch' | 'tasksSnapshot' | 'batchInitiationTime'>>) => {
+    setEmptyingTrashBatch(prev => {
+      if (prev && prev.batchId === batchId) {
+        return { ...prev, ...updates };
+      }
+      return prev;
+    });
+  }, []);
+
   const {
     todos,
-    setTodos,
     undoableActions,
     addTodo,
     toggleTodo,
     updateTodoText,
-    softDeleteTodo, // This now handles the yellow border phase
+    softDeleteTodo, 
     handleUndo,
-    undoTimeoutRefs,
-    delayedFilterSwitchTimersRef // Added from the hook
+    initiateEmptyTrashProcess,
+    undoIndividualPendingFinalDeletion,
+    restoreBatchFromEmptyTrash,
   } = useTodoManagement({
     isClient,
     initialLoadComplete,
@@ -75,7 +84,9 @@ export default function Home() {
     currentFilter: filter,
     setFilter,
     setSearchQuery,
-    currentTime // Pass currentTime to the hook
+    currentTime, 
+    setNewEmptyingTrashBatch: handleSetNewEmptyingTrashBatch,
+    updateExistingEmptyingTrashBatch: handleUpdateExistingEmptyingTrashBatch,
   });
 
   useEffect(() => {
@@ -94,246 +105,56 @@ export default function Home() {
       window.removeEventListener('keydown', resetInactivityTimer);
       if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
       if (statusMessageTimerRef.current) clearTimeout(statusMessageTimerRef.current);
-      undoTimeoutRefs.current.forEach(timer => clearTimeout(timer));
-      delayedFilterSwitchTimersRef.current.forEach(timer => clearTimeout(timer)); // Cleanup for new timers
-      if (autoFinalDeleteIntervalRef.current) clearInterval(autoFinalDeleteIntervalRef.current);
       if (globalRestoreWindowTimeoutRef.current) clearTimeout(globalRestoreWindowTimeoutRef.current);
       clearInterval(timeUpdateInterval);
     };
-  }, [resetInactivityTimer, undoTimeoutRefs, delayedFilterSwitchTimersRef]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resetInactivityTimer]);
 
-  const initiateEmptyTrash = useCallback(() => {
-    // Eligible tasks are those marked `isDeleted` and NOT in yellow-border phase (`markedForDeletionAt` is null)
-    // and not already pending final deletion (`pendingFinalDeletionTimestamp` is null)
-    // and not part of an active undo action for a *restore* (though this is less likely for deleted items)
-    const targetTasks = todos.filter(todo => 
-        todo.isDeleted && 
-        !todo.markedForDeletionAt && 
-        !todo.pendingFinalDeletionTimestamp &&
-        !undoableActions.has(todo.id) // Ensure no active undo (e.g. if a restore was just undone)
-    );
-
-    if (targetTasks.length === 0) {
-      showStatusMessage("No tasks eligible for permanent deletion from trash.");
-      return;
+  const showGlobalRestoreButton = useMemo(() => {
+    if (!emptyingTrashBatch || !emptyingTrashBatch.allIndividualTimersEndedForBatch || emptyingTrashBatch.isRestored) {
+      return false;
     }
-    const currentBatchId = `batch-${Date.now()}`;
-    const tasksSnapshot = JSON.parse(JSON.stringify(targetTasks));
-    const taskIdsInBatch = targetTasks.map(t => t.id);
-
-    setTodos(prevTodos => prevTodos.map(todo => {
-      if (taskIdsInBatch.includes(todo.id)) {
-        // Red border phase: 1-minute individual undo window
-        return { ...todo, pendingFinalDeletionTimestamp: Date.now() + UNDO_TIMEOUT, batchId: currentBatchId };
-      }
-      return todo;
-    }));
-
-    setEmptyingTrashBatch({ batchId: currentBatchId, taskIds: taskIdsInBatch, initiatedAt: Date.now(), tasksSnapshot });
-    showStatusMessage(`${targetTasks.length} task(s) pending final deletion (red border). You have 1 min to undo individually, or 5 mins to restore all.`);
-    focusInput(); 
-    resetInactivityTimer();
-  }, [todos, undoableActions, setTodos, showStatusMessage, focusInput, resetInactivityTimer]);
-
-  const onUndoPendingFinalDeletion = useCallback((taskId: number) => {
-    setTodos(prevTodos => {
-      let taskRestored = false;
-      let restoredTaskText = "";
-      const newTodos = prevTodos.map(todo => {
-        if (todo.id === taskId && todo.pendingFinalDeletionTimestamp && todo.batchId === emptyingTrashBatchRef.current?.batchId) {
-          taskRestored = true;
-          restoredTaskText = todo.text;
-          // Restore to a normal state within the 'deleted' filter
-          return { ...todo, pendingFinalDeletionTimestamp: null, batchId: null };
-        }
-        return todo;
-      });
-
-      if (taskRestored) {
-        showStatusMessage(`Pending deletion of "${restoredTaskText.substring(0,20)}..." undone. It remains in trash.`);
-        const currentBatch = emptyingTrashBatchRef.current;
-        if (currentBatch) {
-          const remainingTasksInBatch = newTodos.filter(t => 
-            currentBatch.taskIds.includes(t.id) && 
-            t.batchId === currentBatch.batchId && 
-            t.pendingFinalDeletionTimestamp
-          );
-          if (remainingTasksInBatch.length === 0) {
-            setEmptyingTrashBatch(null); // All tasks from this batch are processed or undone
-            showStatusMessage("All tasks in the current pending deletion batch have been processed or undone.");
-          }
-        }
-      }
-      return newTodos;
-    });
-    focusInput(); 
-    resetInactivityTimer();
-  }, [setTodos, showStatusMessage, focusInput, resetInactivityTimer]); 
-
-  // Effect for auto-deleting items whose pendingFinalDeletionTimestamp has passed (red-bordered items)
-  useEffect(() => {
-    if (!isClient || !initialLoadComplete) return;
-
-    autoFinalDeleteIntervalRef.current = setInterval(() => {
-      const now = Date.now();
-      let tasksWerePermanentlyDeleted = false;
-      
-      setTodos(prevTodos => {
-        const updatedTodos = prevTodos.filter(todo => {
-          if (todo.pendingFinalDeletionTimestamp && now >= todo.pendingFinalDeletionTimestamp) {
-            // Check if it's part of the current batch and if the global restore window for THAT batch is still active.
-            // This check is a failsafe; primary restore capability is via onUndoPendingFinalDeletion or handleRestoreAllPendingDeletion.
-            const batchInfo = emptyingTrashBatchRef.current;
-            if (batchInfo && todo.batchId === batchInfo.batchId && now < batchInfo.initiatedAt + STAGE_4_GLOBAL_RESTORE_WINDOW) {
-              // It's part of an active batch whose global restore window is still open.
-              // It should not be auto-deleted here yet. It stays with red border.
-              return true; 
-            }
-            // If not part of such an active batch, or if its batch's global restore window has also passed,
-            // then its individual 1-min timer has expired, so it can be permanently deleted.
-            tasksWerePermanentlyDeleted = true;
-            console.log(`Permanently deleting task ID: ${todo.id} - Text: ${todo.text}`);
-            return false; // Permanently delete
-          }
-          return true;
-        });
-
-        // If permanent deletions occurred, check if the active batch needs to be cleared
-        if (tasksWerePermanentlyDeleted && emptyingTrashBatchRef.current) {
-          const currentBatch = emptyingTrashBatchRef.current;
-          const remainingTasksInBatch = updatedTodos.filter(t => 
-            t.batchId === currentBatch.batchId && 
-            t.pendingFinalDeletionTimestamp
-          );
-          if (remainingTasksInBatch.length === 0) {
-            setEmptyingTrashBatch(null); // All tasks from this batch are permanently deleted or were restored.
-          }
-        }
-        return updatedTodos;
-      });
-
-      if (tasksWerePermanentlyDeleted) {
-        showStatusMessage("Tasks with expired red-border timers have been permanently deleted.");
-      }
-    }, AUTO_FINAL_DELETE_INTERVAL);
-
-    return () => { if (autoFinalDeleteIntervalRef.current) clearInterval(autoFinalDeleteIntervalRef.current); };
-  }, [isClient, initialLoadComplete, setTodos, showStatusMessage]);
-
-  const handleRestoreAllPendingDeletion = useCallback(() => {
-    const batchInfo = emptyingTrashBatchRef.current;
-    if (!batchInfo) {
-      showStatusMessage("No tasks currently pending deletion to restore all.");
-      return;
+    if (emptyingTrashBatch.batchCompletionTime) {
+      const timeSinceCompletion = currentTime - emptyingTrashBatch.batchCompletionTime;
+      return timeSinceCompletion < STAGE_4_GLOBAL_RESTORE_WINDOW;
     }
+    return false;
+  }, [emptyingTrashBatch, currentTime]);
 
-    if (currentTime >= batchInfo.initiatedAt + STAGE_4_GLOBAL_RESTORE_WINDOW) {
-      showStatusMessage("The 5-minute restore window for this batch has expired.");
-      // Batch might still be active if some items have not hit their 1-min expiry.
-      // We don't clear emptyingTrashBatch here, let the auto-delete or individual undos handle it.
-      return;
-    }
-
-    const tasksToRestoreFromSnapshot = batchInfo.tasksSnapshot; // These are already in {isDeleted: true} state
-
-    setTodos(prevTodos => {
-      const updatedTodos = prevTodos.map(currentTodo => {
-        // Only revert tasks that are part of the current batch
-        if (currentTodo.batchId === batchInfo.batchId && currentTodo.pendingFinalDeletionTimestamp) {
-          const snapshotVersion = tasksToRestoreFromSnapshot.find(snapTodo => snapTodo.id === currentTodo.id);
-          return { 
-            ...(snapshotVersion || currentTodo), // Fallback to currentTodo if somehow not in snapshot
-            pendingFinalDeletionTimestamp: null, 
-            batchId: null, 
-            isDeleted: true, // Ensure it remains in the deleted filter, but not pending final deletion
-            completed: false // Typically items in trash are not considered completed
-          };
-        }
-        return currentTodo;
-      });
-      return updatedTodos;
-    });
-
-    showStatusMessage(`${tasksToRestoreFromSnapshot.length} task(s) from the batch restored to normal deleted items list.`);
-    setEmptyingTrashBatch(null); // Clear the batch details as it has been fully restored
-    if (globalRestoreWindowTimeoutRef.current) clearTimeout(globalRestoreWindowTimeoutRef.current); // Clear the 5-min timer for this batch
-    focusInput(); 
-    resetInactivityTimer();
-  }, [setTodos, showStatusMessage, focusInput, resetInactivityTimer, currentTime]);
-  
-  // Effect for the 5-minute global restore window (green button timer)
-  useEffect(() => {
-    if (emptyingTrashBatch) {
-      const timeRemaining = (emptyingTrashBatch.initiatedAt + STAGE_4_GLOBAL_RESTORE_WINDOW) - currentTime;
-      if (timeRemaining <= 0) {
-        if (emptyingTrashBatchRef.current && emptyingTrashBatchRef.current.batchId === emptyingTrashBatch.batchId) {
-            showStatusMessage(`The 5-minute "Restore All" window for the current batch has ended.`);
-            // Do NOT clear emptyingTrashBatch here. Tasks in it might still be within their 1-min red border phase.
-            // The button will just disappear from the UI based on this timer.
-            if (globalRestoreWindowTimeoutRef.current) clearTimeout(globalRestoreWindowTimeoutRef.current);
-        }
-      } else {
-        if (globalRestoreWindowTimeoutRef.current) clearTimeout(globalRestoreWindowTimeoutRef.current);
-        globalRestoreWindowTimeoutRef.current = setTimeout(() => {
-          if (emptyingTrashBatchRef.current && emptyingTrashBatchRef.current.batchId === emptyingTrashBatch.batchId) {
-            showStatusMessage(`The 5-minute "Restore All" window for the current batch has ended.`);
-          }
-        }, timeRemaining);
-      }
-    } else {
-      if (globalRestoreWindowTimeoutRef.current) clearTimeout(globalRestoreWindowTimeoutRef.current);
-    }
-    return () => { if (globalRestoreWindowTimeoutRef.current) clearTimeout(globalRestoreWindowTimeoutRef.current); };
-  }, [emptyingTrashBatch, showStatusMessage, currentTime]);
+  const globalRestoreTimeRemainingString = useMemo(() => {
+    if (!showGlobalRestoreButton || !emptyingTrashBatch || !emptyingTrashBatch.batchCompletionTime) return "";
+    const timeRemaining = (emptyingTrashBatch.batchCompletionTime + STAGE_4_GLOBAL_RESTORE_WINDOW) - currentTime;
+    if (timeRemaining <= 0) return "0s";
+    const minutes = Math.floor(timeRemaining / 60000);
+    const seconds = Math.floor((timeRemaining % 60000) / 1000);
+    return `${minutes}m ${seconds}s`;
+  }, [emptyingTrashBatch, currentTime, showGlobalRestoreButton]);
 
   const filteredAndSearchedTodos = useMemo(() => {
     if (!isClient || !initialLoadComplete) return [];
     return todos.filter(todo => {
-      const isInUndoStage1 = undoableActions.has(todo.id); // For initial soft delete (yellow border phase)
-      const actionDetailsForUndo = isInUndoStage1 ? undoableActions.get(todo.id) : undefined;
-      
-      const isMarkedForDeletionWithDelay = !!todo.markedForDeletionAt; // Yellow border phase
+      const isInYellowBorderUndo = undoableActions.has(todo.id) && undoableActions.get(todo.id)?.actionType === 'delete';
       const isPendingFinalDeletion = !!todo.pendingFinalDeletionTimestamp; // Red border phase
 
       let isVisible = false;
       switch (filter) {
         case 'all':
-          // Visible if NOT soft-deleted (isDeleted = false) AND NOT in yellow-border phase waiting for filter switch.
-          // OR if it IS in yellow-border phase (markedForDeletionAt is true).
-          // OR if it was soft-deleted but is being restored via undo.
-          isVisible = (!todo.isDeleted && !isMarkedForDeletionWithDelay && !isPendingFinalDeletion) || 
-                      isMarkedForDeletionWithDelay || 
-                      (actionDetailsForUndo?.actionType === 'restore');
+          isVisible = !todo.isDeleted || isInYellowBorderUndo || (todo.isDeleted && isPendingFinalDeletion);
           break;
         case 'active':
-          isVisible = (!todo.completed && !todo.isDeleted && !isMarkedForDeletionWithDelay && !isPendingFinalDeletion) || 
-                      (isMarkedForDeletionWithDelay && !todo.completed) ||
-                      (actionDetailsForUndo?.actionType === 'restore' && !actionDetailsForUndo.originalTodo.completed);
+          isVisible = !todo.completed && (!todo.isDeleted || isInYellowBorderUndo) && !isPendingFinalDeletion;
           break;
         case 'completed':
-          isVisible = (todo.completed && !todo.isDeleted && !isMarkedForDeletionWithDelay && !isPendingFinalDeletion) ||
-                      (isMarkedForDeletionWithDelay && todo.completed) ||
-                      (actionDetailsForUndo?.actionType === 'restore' && actionDetailsForUndo.originalTodo.completed);
+          isVisible = todo.completed && (!todo.isDeleted || isInYellowBorderUndo) && !isPendingFinalDeletion;
           break;
         case 'deleted':
-          // Visible if fully soft-deleted (isDeleted = true, not in yellow phase, not in undo for delete itself)
-          // OR if it's in red-border phase (pendingFinalDeletion)
-          // Note: A task in yellow-border phase (markedForDeletionAt) is NOT shown in 'deleted' yet.
-          //       It moves to 'deleted' (isDeleted becomes true) after FILTER_SWITCH_DELAY. 
-          //       If its initial delete is being undone (actionDetailsForUndo?.actionType === 'delete'), it might also appear here temporarily if isDeleted was true on originalTodo.
-          isVisible = (todo.isDeleted && !isMarkedForDeletionWithDelay) || isPendingFinalDeletion;
-          if (isInUndoStage1 && actionDetailsForUndo?.actionType === 'delete' && !isMarkedForDeletionWithDelay && todo.isDeleted) {
-            // This case is tricky: if we are undoing a confirmed delete, it might briefly flash here.
-            // However, handleUndo should revert it to its original state (likely not isDeleted or not markedForDeletionAt).
-            // The main logic for `isDeleted` filter is `todo.isDeleted && !isMarkedForDeletionWithDelay` (confirmed deleted) or `isPendingFinalDeletion` (red border)
-          }
+          isVisible = todo.isDeleted && !isInYellowBorderUndo;
           break;
         default:
           isVisible = true; 
       }
-
       if (!isVisible) return false;
-
       if (searchQuery.trim() !== '') {
         return todo.text.toLowerCase().includes(searchQuery.toLowerCase());
       }
@@ -342,30 +163,31 @@ export default function Home() {
   }, [todos, filter, searchQuery, isClient, initialLoadComplete, undoableActions]);
 
   const itemsEligibleForEmptyTrash = useMemo(() => {
-    // Eligible if soft-deleted, not in yellow-border phase, and not already in red-border phase, and not in an undo action
-    return todos.filter(todo => todo.isDeleted && !todo.markedForDeletionAt && !todo.pendingFinalDeletionTimestamp && !undoableActions.has(todo.id)).length;
+    return todos.filter(todo => 
+        todo.isDeleted && 
+        !undoableActions.has(todo.id) && 
+        !todo.pendingFinalDeletionTimestamp
+    ).length;
   }, [todos, undoableActions]);
-
+  
   const activeTasksCount = useMemo(() => {
-    // Active if not completed, not soft-deleted, not in yellow-border, not in red-border, and not in an undo action for deletion
     return todos.filter(t => 
         !t.completed && 
         !t.isDeleted && 
-        !t.markedForDeletionAt && 
+        !t.markedForDeletionAt &&
         !t.pendingFinalDeletionTimestamp &&
         !(undoableActions.has(t.id) && undoableActions.get(t.id)?.actionType === 'delete')
     ).length;
   }, [todos, undoableActions]);
   
   const softDeletedAndStage2Count = useMemo(() => {
-    // Count items in 'deleted' filter: soft-deleted (isDeleted=true, not yellow) OR red-bordered
     return todos.filter(t => 
-        (t.isDeleted && !t.markedForDeletionAt) || 
-        t.pendingFinalDeletionTimestamp
+        t.isDeleted && // Corrected: was todo.isDeleted
+        !(undoableActions.has(t.id) && undoableActions.get(t.id)?.actionType === 'delete')
     ).length;
-  }, [todos]);
+  }, [todos, undoableActions]);
 
-  const isActionInProgress = undoableActions.size > 0 || !!emptyingTrashBatch;
+  const isActionInProgress = undoableActions.size > 0 || (!!emptyingTrashBatch && !emptyingTrashBatch.isRestored) ;
 
   const filterOptions: { value: FilterValue; label: string }[] = [
     { value: 'all', label: 'All' },
@@ -375,14 +197,17 @@ export default function Home() {
   ];
 
   const getEmptyStateMessage = () => {
-    if (!initialLoadComplete) return null;
+    if (!isClient || !initialLoadComplete) return null;
     if (filteredAndSearchedTodos.length > 0) return null;
     if (todos.length === 0) return { title: "No tasks yet!", message: "Get started by adding a new task above." };
     if (searchQuery.trim() !== '') return { title: "No tasks found", message: `Your search for "${searchQuery}" did not match any tasks.` };
     if (filter === 'active') return { title: "No active tasks!", message: "All your tasks are completed or deleted." };
     if (filter === 'completed') return { title: "No completed tasks!", message: "Mark some tasks as completed to see them here." };
     if (filter === 'deleted') {
-      if (emptyingTrashBatch) return { title: "Emptying Trash...", message: "Tasks are pending final deletion." };
+      if (emptyingTrashBatch && !emptyingTrashBatch.allIndividualTimersEndedForBatch) return { title: "Emptying Trash...", message: "Tasks are in their 1-minute final countdown." };
+      if (showGlobalRestoreButton) return { title: "Batch Deleted!", message: `You have ${globalRestoreTimeRemainingString} to restore the batch.` };
+      if (emptyingTrashBatch && emptyingTrashBatch.allIndividualTimersEndedForBatch && !emptyingTrashBatch.isRestored && emptyingTrashBatch.batchCompletionTime && (currentTime - emptyingTrashBatch.batchCompletionTime >= STAGE_4_GLOBAL_RESTORE_WINDOW) ) return { title: "Global Restore Window Expired", message: "The chance to restore the batch has passed." };
+      if (emptyingTrashBatch && emptyingTrashBatch.allIndividualTimersEndedForBatch && !emptyingTrashBatch.isRestored) return { title: "Global Restore Window Active", message: "The global restore window is currently active or just ended." }; // Fallback message
       if (itemsEligibleForEmptyTrash > 0) return { title: "Trash contains items!", message: "Use 'Empty Trash' to start permanent deletion process." };
       return { title: "Trash is empty!", message: "You haven't deleted any tasks yet, or no tasks match the current search in trash." };
     }
@@ -390,10 +215,6 @@ export default function Home() {
   };
 
   const emptyState = getEmptyStateMessage();
-
-  const memoizedGetGlobalRestoreTimeRemaining = useCallback(() => {
-      return getGlobalRestoreTimeRemaining(emptyingTrashBatch, currentTime, STAGE_4_GLOBAL_RESTORE_WINDOW);
-  }, [emptyingTrashBatch, currentTime]);
 
   return (
     <main className="flex min-h-screen flex-col items-center p-4 md:p-8 bg-gradient-to-br from-slate-900 to-slate-700 text-white" onClick={resetInactivityTimer}>
@@ -436,14 +257,14 @@ export default function Home() {
                 <TodoList
                   todos={filteredAndSearchedTodos}
                   onToggle={toggleTodo}
-                  onRemove={softDeleteTodo} // This is the initial delete (yellow border)
+                  onRemove={softDeleteTodo}
                   onUpdateText={updateTodoText}
                   undoableActions={undoableActions}
-                  onUndo={handleUndo} // Handles undo for initial soft delete
-                  undoTimeoutDuration={UNDO_TIMEOUT} 
-                  onRestorePendingDeletion={onUndoPendingFinalDeletion} // Renamed for clarity: this undoes a red-border item
+                  onUndo={handleUndo}
+                  undoTimeoutDuration={UNDO_TIMEOUT}
+                  onRestorePendingDeletion={undoIndividualPendingFinalDeletion} 
                   currentTime={currentTime}
-                  emptyingTrashBatch={emptyingTrashBatch} // Pass for TodoItem to know about batch state for red borders
+                  emptyingTrashBatch={emptyingTrashBatch}
                 />
               )
             )}
@@ -452,9 +273,14 @@ export default function Home() {
                 These tasks are in trash. Use "Empty Trash" to start final deletion process.
               </p>
             )}
-            {isClient && initialLoadComplete && filter === 'deleted' && emptyingTrashBatch && emptyingTrashBatch.taskIds.some(id => todos.find(t=>t.id === id && t.pendingFinalDeletionTimestamp)) && (
+            {isClient && initialLoadComplete && filter === 'deleted' && emptyingTrashBatch && !emptyingTrashBatch.allIndividualTimersEndedForBatch && (
                  <p className="text-center mt-4 text-xs sm:text-sm text-orange-400">
-                    Tasks are pending final deletion. You have {memoizedGetGlobalRestoreTimeRemaining()} to restore all, or 1 min per item.
+                    Emptying trash... Tasks have a 1-minute countdown for individual undo.
+                 </p>
+            )}
+            {isClient && initialLoadComplete && filter === 'deleted' && showGlobalRestoreButton && (
+                 <p className="text-center mt-4 text-xs sm:text-sm text-green-400">
+                    Batch deleted! You have {globalRestoreTimeRemainingString} to restore all items.
                  </p>
             )}
           </CardContent>
@@ -463,17 +289,17 @@ export default function Home() {
             <CardFooter>
               <TodoFooter 
                 activeTasksCount={activeTasksCount}
-                softDeletedAndStage2Count={softDeletedAndStage2Count} // This counts items in trash (isDeleted or pendingFinal)
+                softDeletedAndStage2Count={softDeletedAndStage2Count} 
                 filter={filter}
                 emptyingTrashBatch={emptyingTrashBatch}
                 itemsEligibleForEmptyTrash={itemsEligibleForEmptyTrash}
-                onInitiateEmptyTrash={initiateEmptyTrash}
-                onRestoreAllPendingDeletion={handleRestoreAllPendingDeletion}
-                getGlobalRestoreTimeRemaining={memoizedGetGlobalRestoreTimeRemaining}
+                onInitiateEmptyTrash={initiateEmptyTrashProcess}
+                onRestoreAllPendingDeletion={restoreBatchFromEmptyTrash}
+                globalRestoreTimeRemainingString={globalRestoreTimeRemainingString}
+                showGlobalRestoreButton={showGlobalRestoreButton}
                 isClient={isClient}
                 initialLoadComplete={initialLoadComplete}
-                isActionInProgress={isActionInProgress} // Used to disable controls during actions
-                currentTime={currentTime} // Pass for footer to decide if restore all button is active
+                isActionInProgress={isActionInProgress}
               />
             </CardFooter>
           )}
