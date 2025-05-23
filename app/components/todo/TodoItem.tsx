@@ -2,29 +2,27 @@
 
 import Image from 'next/image';
 import { Card, CardContent } from "@/components/ui/card";
-import { useRef, MouseEvent } from 'react'; 
-import type { Todo, UndoableActionDetails } from '../../types';
-
+import { useRef, MouseEvent, useMemo } from 'react'; 
+import type { Todo, UndoableActionDetails, EmptyingTrashBatchDetails } from '../../types';
 import { useSaveFeedback } from '../../hooks/useSaveFeedback';
 import { useTodoEditing } from '../../hooks/useTodoEditing';
-import { useUndoTimers } from '../../hooks/useUndoTimers';
-
 import { TodoDisplay } from './TodoDisplay';
-import { TodoActions } from './TodoActions';
+import { TodoActions, type PrimaryActionType } from './TodoActions'; // Import PrimaryActionType
 import { UndoBanner } from './UndoBanner';
-
-import { Trash2, Undo2 } from 'lucide-react';
+import { Trash2, Undo2, RotateCcw } from 'lucide-react';
+import { FILTER_SWITCH_DELAY, UNDO_TIMEOUT } from '../../lib/constants';
 
 interface TodoItemProps {
   todo: Todo;
   onToggle: (id: number) => void;
   onRemove: (id: number) => void; 
   onUpdateText: (id: number, newText: string) => void;
-  undoableAction: UndoableActionDetails | null;
-  onUndo: (id: number) => void;
-  undoTimeoutDuration: number;
-  onRestoreDuringGracePeriod?: (id: number) => void; 
+  undoableAction: UndoableActionDetails | null; 
+  onUndo: (id: number) => void; 
+  undoTimeoutDuration: number; 
+  onRestorePendingDeletion?: (id: number) => void; 
   currentTime?: number;
+  emptyingTrashBatch: EmptyingTrashBatchDetails | null;
 }
 
 export function TodoItem({ 
@@ -34,27 +32,44 @@ export function TodoItem({
   onUpdateText, 
   undoableAction, 
   onUndo, 
-  undoTimeoutDuration,
-  onRestoreDuringGracePeriod,
-  currentTime
+  undoTimeoutDuration, 
+  onRestorePendingDeletion,
+  currentTime,
+  emptyingTrashBatch
 }: TodoItemProps) {
   const itemRef = useRef<HTMLLIElement>(null);
   const justSaved = useSaveFeedback(todo.text, todo.completed);
 
-  const {
-    stage1UndoCountdown,
-    stage2GraceCountdown,
-    isStage1UndoActive,
-    isStage2GraceActive
-  } = useUndoTimers({
-    todo,
-    undoableAction,
-    currentTime,
-    undoTimeoutDuration,
-    onRestoreDuringGracePeriod
-  });
+  const isYellowBorderPhase = useMemo(() => {
+    if (!todo.markedForDeletionAt || !currentTime) return false;
+    return !todo.isDeleted && (currentTime - todo.markedForDeletionAt < FILTER_SWITCH_DELAY) && undoableAction?.actionType === 'delete';
+  }, [todo.markedForDeletionAt, todo.isDeleted, currentTime, undoableAction]);
 
-  const isUndoOrGraceActive = isStage1UndoActive || isStage2GraceActive;
+  const yellowBorderCountdown = useMemo(() => {
+    if (!isYellowBorderPhase || !todo.markedForDeletionAt || !currentTime) return 0;
+    return Math.max(0, Math.ceil((FILTER_SWITCH_DELAY - (currentTime - todo.markedForDeletionAt)) / 1000));
+  }, [isYellowBorderPhase, todo.markedForDeletionAt, currentTime]);
+
+  const isRedBorderPhase = useMemo(() => {
+    if (!todo.pendingFinalDeletionTimestamp || !currentTime || !emptyingTrashBatch) return false;
+    return todo.batchId === emptyingTrashBatch.batchId && currentTime < todo.pendingFinalDeletionTimestamp;
+  }, [todo.pendingFinalDeletionTimestamp, todo.batchId, currentTime, emptyingTrashBatch]);
+
+  const redBorderCountdown = useMemo(() => {
+    if (!isRedBorderPhase || !todo.pendingFinalDeletionTimestamp || !currentTime) return 0;
+    return Math.max(0, Math.ceil((todo.pendingFinalDeletionTimestamp - currentTime) / 1000));
+  }, [isRedBorderPhase, todo.pendingFinalDeletionTimestamp, currentTime]);
+
+  const isStage1UndoActive = useMemo(() => {
+    return undoableAction?.actionType === 'delete' && !!todo.markedForDeletionAt;
+  }, [undoableAction, todo.markedForDeletionAt]);
+  
+  const stage1UndoCountdown = useMemo(() => {
+    if (!isStage1UndoActive || !undoableAction || !currentTime) return 0;
+    return Math.max(0, Math.ceil((undoTimeoutDuration - (currentTime - undoableAction.timestamp)) / 1000));
+  }, [isStage1UndoActive, undoableAction, currentTime, undoTimeoutDuration]);
+
+  const isUndoOrDeletionPhaseActive = isYellowBorderPhase || isRedBorderPhase || isStage1UndoActive;
 
   const {
     isEditing,
@@ -68,20 +83,18 @@ export function TodoItem({
     initialText: todo.text,
     onUpdateText: (newText: string) => onUpdateText(todo.id, newText),
     onRemove: () => onRemove(todo.id),
-    isUndoOrGraceActive: isUndoOrGraceActive
+    isUndoOrGraceActive: isUndoOrDeletionPhaseActive 
   });
 
-  const isInteractive = !isUndoOrGraceActive;
+  const isInteractive = !isUndoOrDeletionPhaseActive && !isEditing;
 
   const handleToggleCompletion = () => {
-    if (!isInteractive || todo.isDeleted || isEditing) return; // Also prevent toggle if editing
+    if (!isInteractive || todo.isDeleted || todo.markedForDeletionAt || todo.pendingFinalDeletionTimestamp) return;
     onToggle(todo.id);
   }
 
   const handleCardClick = (event: MouseEvent<HTMLDivElement>) => {
-    if (!isInteractive || todo.isDeleted || isEditing) return;
-
-    // Prevent toggle if click originated from a button, input, or any element with a role (e.g. checkbox)
+    if (!isInteractive || todo.isDeleted || todo.markedForDeletionAt || todo.pendingFinalDeletionTimestamp) return;
     let target = event.target as HTMLElement;
     while (target && target !== event.currentTarget) {
       if (target.tagName === 'BUTTON' || target.tagName === 'INPUT' || target.getAttribute('role') === 'checkbox' || target.closest('[data-no-toggle]')) {
@@ -102,27 +115,56 @@ export function TodoItem({
     'focus-within:shadow-lg focus-within:ring-2 focus-within:ring-sky-500 focus-within:ring-offset-2 focus-within:ring-offset-slate-800',
     'transition-all duration-300',
     'w-full',
-    (todo.isDeleted && !isUndoOrGraceActive) ? 'opacity-70' : '',
-    isStage1UndoActive ? 'opacity-90 ring-2 ring-yellow-400 ring-offset-2 ring-offset-slate-800 animate-pulseSlow' : '',
-    isStage2GraceActive ? 'opacity-90 ring-2 ring-red-500 ring-offset-2 ring-offset-slate-800 animate-pulse' : '',
+    (todo.isDeleted && !isYellowBorderPhase && !isRedBorderPhase && !isStage1UndoActive) ? 'opacity-60' : '',
+    isYellowBorderPhase ? 'ring-2 ring-yellow-400 ring-offset-1 ring-offset-slate-800 animate-pulseSlow' : '',
+    isRedBorderPhase ? 'ring-2 ring-red-500 ring-offset-1 ring-offset-slate-800 animate-pulse' : '',
     justSaved && isInteractive ? 'border-sky-500 shadow-sky-md' : 'border-slate-600',
-    isInteractive && !todo.isDeleted && !isEditing ? 'cursor-pointer' : '', // Add cursor-pointer when interactive
+    isInteractive && !todo.isDeleted && !todo.markedForDeletionAt && !todo.pendingFinalDeletionTimestamp ? 'cursor-pointer' : '',
   ].filter(Boolean).join(' ');
 
-  const showEditButton = !isEditing && !todo.isDeleted && isInteractive;
-  const showMainActionButtons = !isUndoOrGraceActive;
+  const showEditButton = !isEditing && !todo.isDeleted && !isUndoOrDeletionPhaseActive;
+  const showMainActionButtons = !isUndoOrDeletionPhaseActive;
 
-  let primaryActionIcon, primaryActionLabel, primaryActionTitle, onPrimaryAction;
-  if (todo.isDeleted) {
+  let primaryActionIcon: React.ReactElement;
+  let primaryActionLabel: string;
+  let primaryActionTitle: string;
+  let onPrimaryAction: () => void;
+  let primaryActionDisabled = false;
+  let currentActionType: PrimaryActionType = 'initial-delete'; // Default
+
+  if (isRedBorderPhase && onRestorePendingDeletion) {
+    primaryActionIcon = <RotateCcw size={16} />;
+    primaryActionLabel = `Undo permanent delete: ${todo.text}`;
+    primaryActionTitle = `Undo permanent delete (${redBorderCountdown}s left)`;
+    onPrimaryAction = () => onRestorePendingDeletion(todo.id);
+    currentActionType = 'undo-pending-deletion';
+  } else if (todo.isDeleted && !isYellowBorderPhase && !isRedBorderPhase && undoableAction?.actionType === 'restore' && onUndo) {
+    // This case means the *original* undoable action was to 'restore' this item (which is currently isDeleted:true).
+    // So the button should offer to undo that restoration, effectively re-deleting it (softly).
+    primaryActionIcon = <Trash2 size={16} />;
+    primaryActionLabel = `Undo restoration for: ${todo.text}`;
+    primaryActionTitle = `Undo restoration (will re-delete task)`;
+    onPrimaryAction = () => onUndo(todo.id); // onUndo will use the originalTodo from actionDetails to revert.
+    currentActionType = 'initial-delete'; // Visually like a delete button
+  } else if (todo.isDeleted && !isYellowBorderPhase && !isRedBorderPhase) {
     primaryActionIcon = <Undo2 size={16} />;
     primaryActionLabel = `Restore task: ${todo.text}`;
-    primaryActionTitle = `Restore task: ${todo.text}`;
-    onPrimaryAction = () => onUndo(todo.id); 
+    primaryActionTitle = `Restore task from trash`;
+    onPrimaryAction = () => onUndo(todo.id); // This will trigger onUndo with an actionType 'restore'
+    currentActionType = 'restore-from-trash'; 
+  } else if (isYellowBorderPhase) {
+    primaryActionIcon = <Trash2 size={16} />;
+    primaryActionLabel = `Deleting...`;
+    primaryActionTitle = `Task is being deleted (yellow phase)`;
+    onPrimaryAction = () => {};
+    primaryActionDisabled = true;
+    currentActionType = 'disabled';
   } else {
     primaryActionIcon = <Trash2 size={16} />;
     primaryActionLabel = `Delete task: ${todo.text}`;
-    primaryActionTitle = `Delete task: ${todo.text}`;
+    primaryActionTitle = `Delete task (will start yellow phase)`;
     onPrimaryAction = () => onRemove(todo.id);
+    currentActionType = 'initial-delete';
   }
 
   if (!todo) return null;
@@ -131,30 +173,19 @@ export function TodoItem({
     <li 
       ref={itemRef}
       aria-labelledby={labelId}
-      tabIndex={-1} // The card itself will handle focus and click for toggling
+      tabIndex={-1}
       className="list-none w-full flex"
     >
       <Card className={cardClasses} onClick={handleCardClick}>
         <CardContent className="p-2 sm:p-3 flex flex-col gap-1 sm:gap-2"> 
           <div className="flex items-center justify-between gap-1 sm:gap-2"> 
-            <Image
-              src={`https://picsum.photos/seed/${todo.id}/600`}
-              alt={`Task image for: ${todo.text}`}
-              width={600}
-              height={600}
-              className="rounded-md mr-2 sm:mr-3 flex-shrink-0 object-cover" 
-              priority={false}
-              data-no-toggle // Prevent card click from triggering toggle when image is clicked (optional, but can be useful)
-            />
             <div className="flex flex-col flex-grow min-w-0">
               <TodoDisplay
-                todoId={todo.id}
-                todoText={todo.text}
-                todoCompleted={todo.completed}
+                todo={todo}
                 isEditing={isEditing}
                 editText={editText}
                 onEditTextChange={setEditText}
-                onToggleCompletion={handleToggleCompletion} // Still passed to TodoDisplay for the checkbox itself
+                onToggleCompletion={handleToggleCompletion}
                 onSaveEdit={handleSave}
                 onInputKeyDown={handleInputKeyDown}
                 onLabelDoubleClick={startEditing}
@@ -168,32 +199,38 @@ export function TodoItem({
                 checkboxId={checkboxId}
                 labelId={labelId}
                 isInteractive={isInteractive}
-                isDeleted={todo.isDeleted}
-                isUndoOrGraceActive={isUndoOrGraceActive}
+                isUndoOrDeletionPhaseActive={isUndoOrDeletionPhaseActive}
               />
             </div>
-            {/* TodoActions contains buttons, so clicks within it should not toggle the task by default due to the check in handleCardClick */}
             <TodoActions
               todoText={todo.text}
               isInteractive={isInteractive}
               showEditButton={showEditButton}
-              showMainActionButtons={showMainActionButtons}
+              showMainActionButtons={!primaryActionDisabled && showMainActionButtons}
               onEdit={startEditing}
               onPrimaryAction={onPrimaryAction}
               primaryActionIcon={primaryActionIcon}
               primaryActionLabel={primaryActionLabel}
               primaryActionTitle={primaryActionTitle}
+              primaryActionDisabled={primaryActionDisabled}
+              primaryActionType={currentActionType} // Pass the determined type
             />
           </div>
           
           <UndoBanner 
+            todo={todo}
+            undoableAction={undoableAction}
+            onUndo={() => onUndo(todo.id)}
+            onRestorePendingDeletion={onRestorePendingDeletion && isRedBorderPhase ? () => onRestorePendingDeletion(todo.id) : undefined}
+            currentTime={currentTime}
+            undoTimeoutDuration={undoTimeoutDuration}
+            filterSwitchDelay={FILTER_SWITCH_DELAY}
+            isYellowBorderPhase={isYellowBorderPhase}
+            yellowBorderCountdown={yellowBorderCountdown}
+            isRedBorderPhase={isRedBorderPhase}
+            redBorderCountdown={redBorderCountdown}
             isStage1UndoActive={isStage1UndoActive}
             stage1UndoCountdown={stage1UndoCountdown}
-            onUndo={() => onUndo(todo.id)}
-            isStage2GraceActive={isStage2GraceActive}
-            stage2GraceCountdown={stage2GraceCountdown}
-            onRestoreDuringGracePeriod={onRestoreDuringGracePeriod ? () => onRestoreDuringGracePeriod(todo.id) : undefined}
-            todoText={todo.text}
           />
         </CardContent>
       </Card>

@@ -1,19 +1,19 @@
 'use client';
 
 import { TodoItem } from './TodoItem';
-import type { Todo, UndoableActionDetails } from '../../types'; // Updated import path for Todo
+import type { Todo, UndoableActionDetails, EmptyingTrashBatchDetails } from '../../types';
 
 interface TodoListProps {
   todos: Todo[];
   onToggle: (id: number) => void;
-  onRemove: (id: number) => void;
+  onRemove: (id: number) => void; // Initial delete (yellow border)
   onUpdateText: (id: number, newText: string) => void;
-  undoableActions: Map<number, UndoableActionDetails>;
-  onUndo: (id: number) => void;
+  undoableActions: Map<number, UndoableActionDetails>; // For initial soft delete
+  onUndo: (id: number) => void; // Handles undo for initial soft delete
   undoTimeoutDuration: number;
-  // New props for Stage 2 grace period
-  onRestoreDuringGracePeriod?: (id: number) => void;
+  onRestorePendingDeletion?: (id: number) => void; // For undoing a red-border item
   currentTime?: number;
+  emptyingTrashBatch: EmptyingTrashBatchDetails | null; // To know if a task is part of the current batch
 }
 
 const EmptyStateIcon = () => (
@@ -41,19 +41,14 @@ export function TodoList({
   undoableActions, 
   onUndo, 
   undoTimeoutDuration,
-  onRestoreDuringGracePeriod, // Pass down
-  currentTime // Pass down
+  onRestorePendingDeletion,
+  currentTime,
+  emptyingTrashBatch
 }: TodoListProps) {
   
-  if (todos.length === 0) {
-    return (
-      <div className="text-center text-slate-500 mt-10 p-6 border-2 border-dashed border-slate-700 rounded-lg">
-        <EmptyStateIcon />
-        <h3 className="mt-2 text-xl font-semibold text-slate-400">No tasks to display</h3>
-        <p className="mt-1 text-sm text-slate-500">Try a different filter or add new tasks.</p>
-      </div>
-    );
-  }
+  // Empty state is now handled by the Home component itself.
+  // If todos array is empty here, it means they were filtered out, which is fine.
+  // We will still render the ul if todos is empty, and map will render nothing.
 
   return (
     <ul className="space-y-3 mt-4">
@@ -64,13 +59,14 @@ export function TodoList({
             key={todo.id}
             todo={todo}
             onToggle={onToggle}
-            onRemove={onRemove}
+            onRemove={onRemove} // Pass down initial delete handler
             onUpdateText={onUpdateText}
-            undoableAction={currentUndoAction}
-            onUndo={onUndo}
+            undoableAction={currentUndoAction} // For initial soft delete (yellow border phase)
+            onUndo={onUndo} // For initial soft delete (yellow border phase)
             undoTimeoutDuration={undoTimeoutDuration}
-            onRestoreDuringGracePeriod={onRestoreDuringGracePeriod}
+            onRestorePendingDeletion={onRestorePendingDeletion} // For red-border items
             currentTime={currentTime}
+            emptyingTrashBatch={emptyingTrashBatch} // For red-border items
           />
         );
       })}
