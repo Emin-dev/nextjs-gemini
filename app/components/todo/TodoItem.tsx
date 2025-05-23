@@ -134,7 +134,8 @@ export function TodoItem({
     if (!isEditing && todo.text !== editText) {
       setEditText(todo.text);
     }
-  }, [todo.text, isEditing, editText]);
+  // Removed editText from the dependency array
+  }, [todo.text, isEditing]);
 
   useEffect(() => {
     if (todo.text !== prevTodoText.current || todo.completed !== prevTodoCompleted.current) {
@@ -211,7 +212,7 @@ export function TodoItem({
   const showMainActionButtons = !isStage1UndoActive && !isStage2GraceActive;
 
   return (
-    <Card 
+    <Card<"li"> 
       as="li"
       ref={itemRef}
       className={cardClasses}

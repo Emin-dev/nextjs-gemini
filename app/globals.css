@@ -120,3 +120,14 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Hide Firebase/Google injected promotional banners */
+iframe[src*="firebaseapp.com"],
+iframe[src*="google.com/recaptcha"],
+div[style*="z-index: 2147483647"],
+div[class*="__widget"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}

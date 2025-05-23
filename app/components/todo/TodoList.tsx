@@ -8,9 +8,9 @@ interface TodoListProps {
   onToggle: (id: number) => void;
   onRemove: (id: number) => void;
   onUpdateText: (id: number, newText: string) => void;
-  undoableAction: UndoableActionDetails | null; // Added
-  onUndo: (id: number) => void; // Added
-  undoTimeoutDuration: number; // Added
+  undoableActions: Map<number, UndoableActionDetails>; // Changed to Map
+  onUndo: (id: number) => void;
+  undoTimeoutDuration: number;
 }
 
 const EmptyStateIcon = () => (
@@ -30,12 +30,19 @@ const EmptyStateIcon = () => (
   </svg>
 );
 
-export function TodoList({ todos, onToggle, onRemove, onUpdateText, undoableAction, onUndo, undoTimeoutDuration }: TodoListProps) {
-  // The empty state logic from app/page.tsx might be preferred here to avoid duplication
-  // For now, keeping the simple check. Consider centralizing empty state logic if it becomes complex.
-  if (todos.length === 0 && (!undoableAction || !todos.some(t => t.id === undoableAction.id))) {
-    // This is a basic empty state. The more complex logic is in page.tsx.
-    // Depending on requirements, might want to pass a specific empty state component or message.
+export function TodoList({ 
+  todos, 
+  onToggle, 
+  onRemove, 
+  onUpdateText, 
+  undoableActions, // Changed to Map
+  onUndo, 
+  undoTimeoutDuration 
+}: TodoListProps) {
+  
+  // Basic empty state for when the filtered list is empty.
+  // The main page (app/page.tsx) has more sophisticated empty state logic for different scenarios.
+  if (todos.length === 0) {
     return (
       <div className="text-center text-slate-500 mt-10 p-6 border-2 border-dashed border-slate-700 rounded-lg">
         <EmptyStateIcon />
@@ -47,18 +54,21 @@ export function TodoList({ todos, onToggle, onRemove, onUpdateText, undoableActi
 
   return (
     <ul className="space-y-3 mt-4">
-      {todos.map(todo => (
-        <TodoItem
-          key={todo.id}
-          todo={todo}
-          onToggle={onToggle}
-          onRemove={onRemove}
-          onUpdateText={onUpdateText}
-          undoableAction={undoableAction} // Pass down
-          onUndo={onUndo} // Pass down
-          undoTimeoutDuration={undoTimeoutDuration} // Pass down
-        />
-      ))}
+      {todos.map(todo => {
+        const currentUndoAction = undoableActions.get(todo.id) || null;
+        return (
+          <TodoItem
+            key={todo.id}
+            todo={todo}
+            onToggle={onToggle}
+            onRemove={onRemove}
+            onUpdateText={onUpdateText}
+            undoableAction={currentUndoAction} // Pass the specific action for this todo
+            onUndo={onUndo}
+            undoTimeoutDuration={undoTimeoutDuration}
+          />
+        );
+      })}
     </ul>
   );
 }
