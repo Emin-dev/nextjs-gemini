@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import { Card, CardContent } from "@/components/ui/card";
 import { useRef } from 'react'; 
-import type { Todo, UndoableActionDetails } from '../../types'; // Updated import
+import type { Todo, UndoableActionDetails } from '../../types';
 
 import { useSaveFeedback } from '../../hooks/useSaveFeedback';
 import { useTodoEditing } from '../../hooks/useTodoEditing';
@@ -119,7 +119,7 @@ export function TodoItem({
       tabIndex={-1}
       className="list-none w-full flex"
     >
-      <Card className={cardClasses}>
+      <Card className={cardClasses}> {/* Corrected this line */}
         <CardContent className="p-3 sm:p-4 flex flex-col gap-2 sm:gap-3">
           <div className="flex items-center justify-between gap-2 sm:gap-3">
             <Image
