@@ -1,7 +1,7 @@
 'use client';
 
-import { TodoItem, type Todo } from './TodoItem';
-import type { UndoableActionDetails } from '../../page'; // Adjusted path
+import { TodoItem } from './TodoItem';
+import type { Todo, UndoableActionDetails } from '../../types'; // Updated import path for Todo
 
 interface TodoListProps {
   todos: Todo[];

@@ -1,21 +1,19 @@
 'use client';
 
 import Image from 'next/image';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
-import { useState, useRef, useEffect, KeyboardEvent } from 'react';
-import type { UndoableActionDetails } from '../../page';
+import { useRef } from 'react'; 
+import type { Todo, UndoableActionDetails } from '../../types'; // Updated import
 
-export interface Todo {
-  id: number;
-  text: string;
-  completed: boolean;
-  isDeleted?: boolean;
-  pendingFinalDeletionTimestamp?: number | null;
-  batchId?: string | null;
-}
+import { useSaveFeedback } from '../../hooks/useSaveFeedback';
+import { useTodoEditing } from '../../hooks/useTodoEditing';
+import { useUndoTimers } from '../../hooks/useUndoTimers';
+
+import { TodoDisplay } from './TodoDisplay';
+import { TodoActions } from './TodoActions';
+import { UndoBanner } from './UndoBanner';
+
+import { Trash2, Undo2 } from 'lucide-react';
 
 interface TodoItemProps {
   todo: Todo;
@@ -29,31 +27,6 @@ interface TodoItemProps {
   currentTime?: number;
 }
 
-const EditIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-labelledby="editIconTitle">
-    <title id="editIconTitle">Edit</title>
-    <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
-  </svg>
-);
-
-const RemoveIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-labelledby="removeIconTitle">
-    <title id="removeIconTitle">Remove</title>
-    <path d="M3 6h18"></path>
-    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-  </svg>
-);
-
-const RestoreIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-labelledby="restoreIconTitle">
-    <title id="restoreIconTitle">Restore</title>
-    <polyline points="23 4 23 10 17 10"></polyline>
-    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-  </svg>
-);
-
-const SAVE_FEEDBACK_DURATION = 1500;
-
 export function TodoItem({ 
   todo, 
   onToggle, 
@@ -65,101 +38,45 @@ export function TodoItem({
   onRestoreDuringGracePeriod,
   currentTime
 }: TodoItemProps) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [editText, setEditText] = useState(todo.text);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [justSaved, setJustSaved] = useState(false);
-  const prevTodoText = useRef(todo.text);
-  const prevTodoCompleted = useRef(todo.completed);
-  const itemRef = useRef<HTMLDivElement>(null);
-  
-  const [stage1UndoCountdown, setStage1UndoCountdown] = useState(0);
-  const [stage2GraceCountdown, setStage2GraceCountdown] = useState(0);
+  const itemRef = useRef<HTMLLIElement>(null);
+  const justSaved = useSaveFeedback(todo.text, todo.completed);
 
-  const isStage1UndoActive = undoableAction?.id === todo.id && undoableAction?.actionType === 'delete';
-  const isStage2GraceActive = !!(todo.isDeleted && todo.pendingFinalDeletionTimestamp && currentTime && currentTime < todo.pendingFinalDeletionTimestamp && onRestoreDuringGracePeriod);
+  const {
+    stage1UndoCountdown,
+    stage2GraceCountdown,
+    isStage1UndoActive,
+    isStage2GraceActive
+  } = useUndoTimers({
+    todo,
+    undoableAction,
+    currentTime,
+    undoTimeoutDuration,
+    onRestoreDuringGracePeriod
+  });
 
-  useEffect(() => {
-    if (isStage1UndoActive) {
-      setStage1UndoCountdown(Math.ceil(undoTimeoutDuration / 1000));
-      const interval = setInterval(() => {
-        setStage1UndoCountdown(prev => Math.max(0, prev - 1));
-      }, 1000);
-      return () => clearInterval(interval);
-    } else {
-      setStage1UndoCountdown(0);
-    }
-  }, [isStage1UndoActive, undoTimeoutDuration]);
+  const isUndoOrGraceActive = isStage1UndoActive || isStage2GraceActive;
 
-  useEffect(() => {
-    if (isStage2GraceActive && todo.pendingFinalDeletionTimestamp && currentTime) {
-      const timeLeft = Math.max(0, Math.ceil((todo.pendingFinalDeletionTimestamp - currentTime) / 1000));
-      setStage2GraceCountdown(timeLeft);
-    } else {
-      setStage2GraceCountdown(0);
-    }
-  }, [isStage2GraceActive, todo.pendingFinalDeletionTimestamp, currentTime]);
+  const {
+    isEditing,
+    editText,
+    setEditText,
+    inputRef,
+    handleSave,
+    handleInputKeyDown,
+    startEditing,
+  } = useTodoEditing({
+    initialText: todo.text,
+    onUpdateText: (newText: string) => onUpdateText(todo.id, newText),
+    onRemove: () => onRemove(todo.id),
+    isUndoOrGraceActive: isUndoOrGraceActive
+  });
 
-  useEffect(() => {
-    if (isEditing && !isStage1UndoActive && !isStage2GraceActive) {
-      inputRef.current?.focus();
-      inputRef.current?.select();
-    }
-  }, [isEditing, isStage1UndoActive, isStage2GraceActive]);
+  const isInteractive = !isUndoOrGraceActive;
 
-  useEffect(() => {
-    if (!isEditing && todo.text !== editText) {
-      setEditText(todo.text);
-    }
-  }, [todo.text, isEditing, editText]);
-
-  useEffect(() => {
-    if (prevTodoText.current !== todo.text || prevTodoCompleted.current !== todo.completed) {
-      if (prevTodoText.current !== undefined || prevTodoCompleted.current !== undefined) { 
-        setJustSaved(true);
-        const timer = setTimeout(() => setJustSaved(false), SAVE_FEEDBACK_DURATION);
-        prevTodoText.current = todo.text;
-        prevTodoCompleted.current = todo.completed;
-        return () => clearTimeout(timer);
-      }
-    }
-    prevTodoText.current = todo.text; 
-    prevTodoCompleted.current = todo.completed;
-  }, [todo.text, todo.completed]);
-
-  const isInteractive = !isStage1UndoActive && !isStage2GraceActive; // Corrected: This line was fine, the typo was below.
-
-  const handleToggle = () => {
+  const handleToggleCompletion = () => {
     if (!isInteractive || todo.isDeleted) return;
     onToggle(todo.id);
   }
-
-  const handleSave = () => {
-    if (!isInteractive) return;
-    const trimmedText = editText.trim();
-    setIsEditing(false);
-    if (trimmedText === '') {
-      onRemove(todo.id); 
-    } else if (trimmedText !== todo.text) {
-      onUpdateText(todo.id, trimmedText);
-    } 
-  };
-
-  const handleInputKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') { e.preventDefault(); handleSave(); }
-    else if (e.key === 'Escape') { setEditText(todo.text); setIsEditing(false); }
-  };
-  
-  const handleLabelDoubleClick = () => {
-    if (isInteractive && !todo.isDeleted) { setEditText(todo.text); setIsEditing(true); }
-  };
-
-  const handleLabelKeyDown = (e: KeyboardEvent<HTMLLabelElement>) => {
-    // Corrected typo: isinteractive -> isInteractive, todo.isdeleted -> todo.isDeleted, e.preventdefault -> e.preventDefault, setedittext -> setEditText, setisediting -> setIsEditing
-    if ((e.key === 'Enter' || e.key === ' ') && isInteractive && !todo.isDeleted) {
-      e.preventDefault(); setEditText(todo.text); setIsEditing(true);
-    }
-  };
 
   const checkboxId = `todo-item-checkbox-${todo.id}`;
   const labelId = `todo-item-label-${todo.id}`;
@@ -171,23 +88,98 @@ export function TodoItem({
     'focus-within:shadow-lg focus-within:ring-2 focus-within:ring-sky-500 focus-within:ring-offset-2 focus-within:ring-offset-slate-800',
     'transition-all duration-300',
     'w-full',
-    (todo.isDeleted && !isStage1UndoActive && !isStage2GraceActive) ? 'opacity-70' : '',
+    (todo.isDeleted && !isUndoOrGraceActive) ? 'opacity-70' : '',
     isStage1UndoActive ? 'opacity-90 ring-2 ring-yellow-400 ring-offset-2 ring-offset-slate-800 animate-pulseSlow' : '',
     isStage2GraceActive ? 'opacity-90 ring-2 ring-red-500 ring-offset-2 ring-offset-slate-800 animate-pulse' : '',
     justSaved && isInteractive ? 'border-sky-500 shadow-sky-md' : 'border-slate-600',
   ].join(' ');
 
   const showEditButton = !isEditing && !todo.isDeleted && isInteractive;
-  const showMainActionButtons = !isStage1UndoActive && !isStage2GraceActive;
+  const showMainActionButtons = !isUndoOrGraceActive;
 
-  // Drastically simplified return for debugging
-  if (todo) { // Ensure todo is defined to prevent errors with todo.text
-    return (
-      <div ref={itemRef} className="w-full flex">
-        Simple test for {todo.text}
-      </div>
-    );
+  let primaryActionIcon, primaryActionLabel, primaryActionTitle, onPrimaryAction;
+  if (todo.isDeleted) {
+    primaryActionIcon = <Undo2 size={16} />;
+    primaryActionLabel = `Restore task: ${todo.text}`;
+    primaryActionTitle = `Restore task: ${todo.text}`;
+    onPrimaryAction = () => onUndo(todo.id); 
+  } else {
+    primaryActionIcon = <Trash2 size={16} />;
+    primaryActionLabel = `Delete task: ${todo.text}`;
+    primaryActionTitle = `Delete task: ${todo.text}`;
+    onPrimaryAction = () => onRemove(todo.id);
   }
-  return null; // Fallback if todo is somehow undefined
 
+  if (!todo) return null;
+
+  return (
+    <li 
+      ref={itemRef}
+      aria-labelledby={labelId}
+      tabIndex={-1}
+      className="list-none w-full flex"
+    >
+      <Card className={cardClasses}>
+        <CardContent className="p-3 sm:p-4 flex flex-col gap-2 sm:gap-3">
+          <div className="flex items-center justify-between gap-2 sm:gap-3">
+            <Image
+              src={`https://picsum.photos/seed/${todo.id}/60`}
+              alt={`Task image for: ${todo.text}`}
+              width={60}
+              height={60}
+              className="rounded-md mr-3 sm:mr-4 flex-shrink-0 object-cover"
+              priority={false}
+            />
+            <div className="flex flex-col flex-grow min-w-0">
+              <TodoDisplay
+                todoId={todo.id}
+                todoText={todo.text}
+                todoCompleted={todo.completed}
+                isEditing={isEditing}
+                editText={editText}
+                onEditTextChange={setEditText}
+                onToggleCompletion={handleToggleCompletion}
+                onSaveEdit={handleSave}
+                onInputKeyDown={handleInputKeyDown}
+                onLabelDoubleClick={startEditing}
+                onLabelKeyDown={(e) => { 
+                  if ((e.key === 'Enter' || e.key === ' ') && isInteractive && !todo.isDeleted) {
+                    e.preventDefault(); 
+                    startEditing();
+                  }
+                }}
+                inputRef={inputRef}
+                checkboxId={checkboxId}
+                labelId={labelId}
+                isInteractive={isInteractive}
+                isDeleted={todo.isDeleted}
+                isUndoOrGraceActive={isUndoOrGraceActive}
+              />
+            </div>
+            <TodoActions
+              todoText={todo.text}
+              isInteractive={isInteractive}
+              showEditButton={showEditButton}
+              showMainActionButtons={showMainActionButtons}
+              onEdit={startEditing}
+              onPrimaryAction={onPrimaryAction}
+              primaryActionIcon={primaryActionIcon}
+              primaryActionLabel={primaryActionLabel}
+              primaryActionTitle={primaryActionTitle}
+            />
+          </div>
+          
+          <UndoBanner 
+            isStage1UndoActive={isStage1UndoActive}
+            stage1UndoCountdown={stage1UndoCountdown}
+            onUndo={() => onUndo(todo.id)}
+            isStage2GraceActive={isStage2GraceActive}
+            stage2GraceCountdown={stage2GraceCountdown}
+            onRestoreDuringGracePeriod={onRestoreDuringGracePeriod ? () => onRestoreDuringGracePeriod(todo.id) : undefined}
+            todoText={todo.text}
+          />
+        </CardContent>
+      </Card>
+    </li>
+  );
 }
