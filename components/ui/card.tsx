@@ -2,44 +2,52 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
+// Define a more specific type for elements that can be used with 'as' prop
+type AsElementType = keyof React.JSX.IntrinsicElements | React.ComponentType<any>;
+
 // Helper type to get props of a React component
-type ElementProps<E extends React.ElementType> = React.ComponentPropsWithoutRef<E>
+type ElementProps<E extends AsElementType> = React.ComponentPropsWithoutRef<E>
 
 // PolymorphicComponentProps allows us to define an 'as' prop
 // and spread the rest of the props for the given element type.
-type PolymorphicComponentProps<E extends React.ElementType, P> = P & {
+type PolymorphicComponentProps<E extends AsElementType, P> = P & {
   as?: E
 }
 
 // This is the type for the actual props our Card component will receive.
 // It includes our custom props (like 'as') and the HTML attributes
 // of the element specified by 'as' (or 'div' by default).
-type CardProps<E extends React.ElementType = "div"> =
-  PolymorphicComponentProps<E, {}> & Omit<ElementProps<E>, keyof PolymorphicComponentProps<E, {}>>;
+// It O MITS 'ref' because forwardRef handles it separately.
+type CardProps<E extends AsElementType = "div"> =
+  PolymorphicComponentProps<E, {}> & Omit<ElementProps<E>, keyof PolymorphicComponentProps<E, {}> | 'ref'>;
 
-// Define a type for the ref, which depends on the element type E
-type CardRef<E extends React.ElementType = "div"> = React.ComponentPropsWithRef<E>["ref"];
+// The render function passed to forwardRef
+const CardRenderFn = <E extends AsElementType = "div">(
+  { as, className, ...props }: CardProps<E>,
+  ref: React.ForwardedRef<React.ElementRef<E>> // React.ElementRef should now be happier with AsElementType
+) => {
+  const Component = as || "div";
+  return (
+    <Component
+      ref={ref}
+      data-slot="card"
+      className={cn(
+        "bg-card text-card-foreground flex flex-col gap-6 rounded-xl border py-6 shadow-sm",
+        className
+      )}
+      {...props}
+    />
+  );
+};
 
-// Define the Card component using a generic type E for the element
-const Card = React.forwardRef(
-  <E extends React.ElementType = "div">(
-    { as, className, ...props }: CardProps<E>,
-    ref: CardRef<E>
-  ) => {
-    const Component = as || "div";
-    return (
-      <Component
-        ref={ref}
-        data-slot="card"
-        className={cn(
-          "bg-card text-card-foreground flex flex-col gap-6 rounded-xl border py-6 shadow-sm",
-          className
-        )}
-        {...props}
-      />
-    );
-  }
-);
+// Type for the final polymorphic component. 
+// Props passed by the user will include 'ref'.
+type PolymorphicCardComponent = <E extends AsElementType = "div">(
+  props: CardProps<E> & { ref?: React.ForwardedRef<React.ElementRef<E>> }
+) => React.ReactElement | null;
+
+// Create the component using forwardRef and then cast it to the polymorphic type
+const Card = React.forwardRef(CardRenderFn) as PolymorphicCardComponent;
 Card.displayName = "Card"
 
 
@@ -58,7 +66,6 @@ function CardHeader({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
-// Reverted CardTitle to use div as per original ShadCN structure
 function CardTitle({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div

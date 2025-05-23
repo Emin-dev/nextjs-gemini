@@ -6,13 +6,14 @@ import { Input } from '@/components/ui/input';
 
 interface TodoAddFormProps {
   onAddTodo: (text: string) => void;
+  disabled?: boolean; // Added disabled prop
 }
 
 export interface TodoAddFormHandle {
   focusInput: () => void;
 }
 
-export const TodoAddForm = forwardRef<TodoAddFormHandle, TodoAddFormProps>(({ onAddTodo }, ref) => {
+export const TodoAddForm = forwardRef<TodoAddFormHandle, TodoAddFormProps>(({ onAddTodo, disabled }, ref) => {
   const [newTodoText, setNewTodoText] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -23,6 +24,7 @@ export const TodoAddForm = forwardRef<TodoAddFormHandle, TodoAddFormProps>(({ on
   }));
 
   const handleSubmit = () => {
+    if (disabled) return; // Prevent submission if disabled
     const trimmedText = newTodoText.trim();
     if (trimmedText === '') return;
     onAddTodo(trimmedText);
@@ -47,11 +49,12 @@ export const TodoAddForm = forwardRef<TodoAddFormHandle, TodoAddFormProps>(({ on
         className="flex-grow bg-slate-700 border-slate-600 text-white placeholder-slate-400 focus:ring-sky-500 focus:border-sky-500"
         onKeyDown={handleKeyDown}
         aria-label="New task text"
+        disabled={disabled} // Apply disabled prop
       />
       <Button
         onClick={handleSubmit}
         className="bg-sky-600 hover:bg-sky-700 text-white"
-        disabled={newTodoText.trim() === ''}
+        disabled={disabled || newTodoText.trim() === ''} // Apply disabled prop
       >
         Add Task
       </Button>
