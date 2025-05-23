@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useMemo } from 'react'; // Added useMemo
 import type { Todo, UndoableActionDetails, FilterValue } from '../types';
 import { UNDO_TIMEOUT, UNDOABLE_ACTIONS_STORAGE_KEY } from '../lib/constants';
 import useLocalStorage from './useLocalStorage';
@@ -24,9 +24,10 @@ export function useUndoableActions({
   focusInput,
   resetInactivityTimer,
 }: UseUndoableActionsProps) {
+  const initialUndoableActions = useMemo(() => new Map<number, UndoableActionDetails>(), []); // Memoized initial value
   const [undoableActions, setUndoableActions, removeUndoableActionsStorage] = useLocalStorage<Map<number, UndoableActionDetails>>(
     UNDOABLE_ACTIONS_STORAGE_KEY,
-    new Map()
+    initialUndoableActions // Use memoized initial value
   );
   const undoTimeoutRefs = useRef<Map<number, NodeJS.Timeout>>(new Map());
 
