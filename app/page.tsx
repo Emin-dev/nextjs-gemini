@@ -10,7 +10,7 @@ import { VisibleStatusMessage } from './components/ui/StatusMessage';
 import { TodoControls } from './components/layout/TodoControls';
 import { TodoFooter } from './components/layout/TodoFooter';
 import { EmptyTodoListState } from './components/layout/EmptyTodoListState';
-import { PageHeader } from './components/layout/PageHeader';
+
 import {
   INACTIVITY_TIMEOUT,
   STATUS_MESSAGE_DURATION,
@@ -58,10 +58,10 @@ export default function Home() {
     updateTodoText,
     softDeleteTodo, 
     handleUndo,
-    emptyingTrashBatch,
-    initiateEmptyTrashProcess,
+    emptyingTrashBatch, 
+    initiateEmptyTrashProcess, 
     undoIndividualPendingFinalDeletion,
-    restoreBatchFromEmptyTrash,
+    restoreBatchFromEmptyTrash, 
   } = useTodoManagement({
     isClient,
     initialLoadComplete,
@@ -127,27 +127,27 @@ export default function Home() {
     if (!isClient || !initialLoadComplete) return [];
     return todos.filter(todo => {
       const isInYellowBorderUndo = undoableActions.has(todo.id) && undoableActions.get(todo.id)?.actionType === 'delete';
-      const isPendingFinalDeletion = !!todo.pendingFinalDeletionTimestamp; 
+      const isPendingFinalDeletion = !!todo.pendingFinalDeletionTimestamp;
 
-      let isVisible = false;
+      let matchesFilter;
       switch (filter) {
         case 'all':
-          isVisible = !todo.isDeleted || isInYellowBorderUndo;
+          matchesFilter = !todo.isDeleted || isInYellowBorderUndo || (todo.isDeleted && isPendingFinalDeletion);
           break;
         case 'active':
-          isVisible = !todo.completed && (!todo.isDeleted || isInYellowBorderUndo);
+          matchesFilter = !todo.completed && (!todo.isDeleted || isInYellowBorderUndo || (todo.isDeleted && isPendingFinalDeletion));
           break;
         case 'completed':
-          isVisible = todo.completed && (!todo.isDeleted || isInYellowBorderUndo);
+          matchesFilter = todo.completed && (!todo.isDeleted || isInYellowBorderUndo || (todo.isDeleted && isPendingFinalDeletion));
           break;
         case 'deleted':
-          isVisible = todo.isDeleted && !isInYellowBorderUndo;
+          matchesFilter = todo.isDeleted && !isInYellowBorderUndo;
           break;
         default:
-          isVisible = true; 
+          matchesFilter = true; 
       }
 
-      if (!isVisible) return false;
+      if (!matchesFilter) return false;
 
       if (searchQuery.trim() !== '') {
         return todo.text.toLowerCase().includes(searchQuery.toLowerCase());
@@ -156,7 +156,7 @@ export default function Home() {
     });
   }, [todos, filter, searchQuery, isClient, initialLoadComplete, undoableActions]);
 
-  const itemsEligibleForEmptyTrash = useMemo(() => {
+  const itemsEligibleForClearAll = useMemo(() => {
     return todos.filter(todo => 
         todo.isDeleted && 
         !undoableActions.has(todo.id) && 
@@ -190,7 +190,7 @@ export default function Home() {
     { value: 'all', label: 'All' },
     { value: 'active', label: 'Active' },
     { value: 'completed', label: 'Completed' },
-    { value: 'deleted', label: 'Deleted' },
+    { value: 'deleted', label: 'Deleted' }, // Updated label
   ];
 
   const emptyState = getEmptyStateMessage({
@@ -204,20 +204,20 @@ export default function Home() {
     showGlobalRestoreButton,
     globalRestoreTimeRemainingString,
     currentTime,
-    itemsEligibleForEmptyTrash,
+    itemsEligibleForEmptyTrash: itemsEligibleForClearAll, 
   });
 
   return (
-    <main className="flex min-h-screen flex-col items-center p-4 md:p-8 bg-gradient-to-br from-slate-900 to-slate-700 text-white" onClick={resetInactivityTimer}>
+    <main className="flex min-h-screen flex-col items-center justify-center p-4 md:py-12 lg:py-16 bg-gradient-to-br from-slate-900 to-slate-700 text-white" onClick={resetInactivityTimer}>
       <div className="w-full max-w-xl">
-        <PageHeader title="My ToDo App" subtitle="Organize your tasks with style!" />
 
-        <Card className="bg-slate-800 shadow-2xl border-slate-700">
-          <CardHeader className="pb-4">
-            <div className="flex flex-col sm:flex-row justify-between items-center mb-4 gap-3 sm:gap-4">
-              <CardTitle className="text-2xl md:text-3xl text-sky-400 whitespace-nowrap flex-shrink-0" id="tasks-heading">Your Tasks</CardTitle>
-              {/* Added a wrapper div for TodoControls with flex-grow properties */}
-              <div className="w-full sm:flex-1 sm:min-w-0">
+        <Card className="bg-slate-800 shadow-xl border-slate-700">
+          <CardHeader className="p-4 sm:p-6"> 
+            <div className="flex flex-col items-start mb-4 gap-3"> 
+              <CardTitle className="text-2xl md:text-3xl text-cyan-400" id="tasks-heading">
+                Your Tasks
+              </CardTitle>
+              <div className="w-full">
                 <TodoControls 
                   filter={filter}
                   onFilterChange={setFilter}
@@ -232,7 +232,7 @@ export default function Home() {
             </div>
           </CardHeader>
 
-          <CardContent className="pt-2">
+          <CardContent className="pt-0 sm:px-6 sm:pb-6">
             <TodoAddForm ref={todoAddFormRef} onAddTodo={addTodo} disabled={!initialLoadComplete} />
 
             {!isClient || !initialLoadComplete ? (
@@ -256,33 +256,34 @@ export default function Home() {
                 />
               )
             )}
-             {isClient && initialLoadComplete && filter === 'deleted' && filteredAndSearchedTodos.length > 0 && !emptyingTrashBatch && itemsEligibleForEmptyTrash > 0 && (
+             {/* Updated paragraph texts for 'deleted' filter state */}
+             {isClient && initialLoadComplete && filter === 'deleted' && filteredAndSearchedTodos.length > 0 && !emptyingTrashBatch && itemsEligibleForClearAll > 0 && (
               <p className="text-center mt-4 text-xs sm:text-sm text-slate-400">
-                These tasks are in trash. Use "Empty Trash" to start final deletion process.
+                These are your deleted tasks. Use "Clear Deleted" to start the permanent deletion process.
               </p>
             )}
             {isClient && initialLoadComplete && filter === 'deleted' && emptyingTrashBatch && !emptyingTrashBatch.allIndividualTimersEndedForBatch && (
                  <p className="text-center mt-4 text-xs sm:text-sm text-orange-400">
-                    Emptying trash... Tasks have a 1-minute countdown for individual undo.
+                    Clearing Deleted Tasks... Tasks have a 1-minute countdown for individual undo.
                  </p>
             )}
             {isClient && initialLoadComplete && filter === 'deleted' && showGlobalRestoreButton && (
                  <p className="text-center mt-4 text-xs sm:text-sm text-green-400">
-                    Batch deleted! You have {globalRestoreTimeRemainingString} to restore all items.
+                    Batch Cleared! You have {globalRestoreTimeRemainingString} to restore all items.
                  </p>
             )}
           </CardContent>
 
           {isClient && initialLoadComplete && (
-            <CardFooter>
+            <CardFooter className="px-4 pb-4 sm:px-6 sm:pb-6 pt-0">
               <TodoFooter 
                 activeTasksCount={activeTasksCount}
                 softDeletedAndStage2Count={softDeletedAndStage2Count} 
                 filter={filter}
-                emptyingTrashBatch={emptyingTrashBatch}
-                itemsEligibleForEmptyTrash={itemsEligibleForEmptyTrash}
-                onInitiateEmptyTrash={initiateEmptyTrashProcess}
-                onRestoreAllPendingDeletion={restoreBatchFromEmptyTrash}
+                emptyingTrashBatch={emptyingTrashBatch} 
+                itemsEligibleForEmptyTrash={itemsEligibleForClearAll} 
+                onInitiateEmptyTrash={initiateEmptyTrashProcess} 
+                onRestoreAllPendingDeletion={restoreBatchFromEmptyTrash} 
                 globalRestoreTimeRemainingString={globalRestoreTimeRemainingString}
                 showGlobalRestoreButton={showGlobalRestoreButton}
                 isClient={isClient}
@@ -304,8 +305,8 @@ export default function Home() {
           />
         )}
 
-        <footer className="text-center mt-8 md:mt-12 text-xs sm:text-sm text-slate-500" role="contentinfo">
-          <p>Powered by Next.js, Shadcn UI & Tailwind CSS</p>
+        <footer className="text-center mt-8 md:mt-12 text-xs sm:text-sm text-slate-400" role="contentinfo">
+          <p>Powered by BakuEdu</p> 
         </footer>
       </div>
     </main>

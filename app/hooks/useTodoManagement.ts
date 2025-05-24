@@ -4,7 +4,7 @@ import { useEffect, useCallback } from 'react';
 import type { Todo, FilterValue, EmptyingTrashBatchDetails } from '../types';
 import {
   LOCAL_STORAGE_KEY,
-  FILTER_SWITCH_DELAY, // Re-added this import
+  FILTER_SWITCH_DELAY, 
   STAGE_2_GRACE_PERIOD_DURATION,
 } from '../lib/constants';
 import useLocalStorage from './useLocalStorage';
@@ -75,7 +75,6 @@ export function useTodoManagement({
                 !todo.isDeleted && 
                 !undoableActions.has(todo.id)) {
                 
-                // Check both conditions: undo window closed AND 20s passed since marking
                 const timeSinceMarked = currentTime - todo.markedForDeletionAt;
                 if (timeSinceMarked >= FILTER_SWITCH_DELAY) {
                     itemsToMove.push(todo);
@@ -90,11 +89,11 @@ export function useTodoManagement({
 
     if (itemsToMove.length > 0 && currentFilter !== 'deleted') {
         const message = itemsToMove.length === 1
-            ? `"${itemsToMove[0].text.substring(0, 20)}..." moved to Deleted items.`
-            : `"${itemsToMove[0].text.substring(0, 20)}..." and ${itemsToMove.length - 1} other(s) moved to Deleted items.`;
+            ? `"${itemsToMove[0].text.substring(0, 20)}..." moved to Deleted.`
+            : `"${itemsToMove[0].text.substring(0, 20)}..." and ${itemsToMove.length - 1} other(s) moved to Deleted.`;
         showStatusMessage(message);
     }
-  }, [currentTime, currentFilter, setTodos, showStatusMessage, undoableActions, FILTER_SWITCH_DELAY]); // Added FILTER_SWITCH_DELAY to dependencies
+  }, [currentTime, currentFilter, setTodos, showStatusMessage, undoableActions, FILTER_SWITCH_DELAY]);
 
   const softDeleteTodo = useCallback((id: number) => {
     const todoToModify = todos.find(t => t.id === id);
@@ -105,8 +104,6 @@ export function useTodoManagement({
       return;
     }
 
-    // Prevent re-marking if already in Stage 1 (markedForDeletionAt is set)
-    // This also implicitly covers the case where undoableActions.has(id) is true for this item.
     if (todoToModify.markedForDeletionAt) { 
       showStatusMessage("Task is already marked for deletion (undo window active).");
       return;
@@ -165,7 +162,7 @@ export function useTodoManagement({
   }, [todos, setTodos, clearSpecificUndoAction, showStatusMessage, resetInactivityTimer, emptyingTrashBatchRef]);
 
   const updateTodoText = useCallback((id: number, newText: string) => {
-    const todo = todos.find(t => t.id.toString() === id.toString()); // Ensure ID comparison is robust
+    const todo = todos.find(t => t.id.toString() === id.toString());
     if (todo?.markedForDeletionAt || todo?.pendingFinalDeletionTimestamp || emptyingTrashBatchRef.current?.taskIdsInBatch.includes(id)) {
       showStatusMessage("Cannot modify task during deletion process.");
       return;
@@ -173,7 +170,7 @@ export function useTodoManagement({
     clearSpecificUndoAction(id);
     let oldText = '';
     setTodos(prev => prev.map(t => {
-      if (t.id.toString() === id.toString()) { // Ensure ID comparison is robust
+      if (t.id.toString() === id.toString()) { 
         oldText = t.text;
         return { ...t, text: newText };
       }

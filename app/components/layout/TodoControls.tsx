@@ -18,7 +18,7 @@ interface TodoControlsProps {
   filterOptions: FilterOption[];
   isClient: boolean;
   initialLoadComplete: boolean;
-  isActionInProgress: boolean;
+  isActionInProgress: boolean; // Keep prop for potential future use or other conditional UI, but not for disabling filters/search
 }
 
 export function TodoControls({
@@ -29,7 +29,7 @@ export function TodoControls({
   filterOptions,
   isClient,
   initialLoadComplete,
-  isActionInProgress
+  isActionInProgress // Prop is still received
 }: TodoControlsProps) {
   if (!isClient) return null;
 
@@ -38,9 +38,9 @@ export function TodoControls({
       <RadioGroup
         value={filter}
         defaultValue="all"
-        onValueChange={onFilterChange}
+        onValueChange={onFilterChange} // Filter changes are always allowed
         className="flex items-center p-1 bg-slate-700 rounded-lg shadow-sm w-full sm:w-auto justify-center mb-3 sm:mb-0"
-        disabled={!initialLoadComplete}
+        disabled={!initialLoadComplete} // Only disabled during initial load
         aria-labelledby="tasks-heading"
       >
         {filterOptions.map(option => (
@@ -49,28 +49,30 @@ export function TodoControls({
             htmlFor={`filter-${option.value}`}
             className={`flex-1 sm:flex-none text-center px-3 py-1.5 text-sm sm:text-base rounded-md cursor-pointer transition-colors duration-150 ease-in-out whitespace-nowrap
                         ${filter === option.value
-                          ? 'bg-sky-500 text-white shadow-sm'
+                          ? 'bg-cyan-600 text-white shadow-sm' 
                           : 'text-slate-300 hover:bg-slate-600'}
+                        ${!initialLoadComplete ? 'opacity-50 cursor-not-allowed' : ''} // Visual cue for disabled state during load
                        `}
           >
             <RadioGroupItem
               value={option.value}
               id={`filter-${option.value}`}
               className="sr-only peer"
+              disabled={!initialLoadComplete} // Radio items only disabled during initial load
             />
             {option.label}
           </Label>
         ))}
       </RadioGroup>
-      <div className="w-full mt-4">
+      <div className="w-full mt-3">
         <Input
           type="search"
           placeholder="Search tasks..."
           value={searchQuery}
-          onChange={(e) => onSearchQueryChange(e.target.value)}
-          className="bg-slate-800 border-slate-600 text-white placeholder-slate-400 focus:ring-sky-500 focus:border-sky-500 text-xl sm:text-2xl w-full h-14 sm:h-16 px-5 py-4"
+          onChange={(e) => onSearchQueryChange(e.target.value)} // Search is always allowed
+          className="bg-slate-700 border-slate-600 text-white placeholder-slate-400 focus:ring-cyan-500 focus:border-cyan-500 text-base sm:text-lg w-full h-11 px-4 py-2"
           aria-label="Search tasks by keyword"
-          disabled={!initialLoadComplete || isActionInProgress}
+          disabled={!initialLoadComplete} // Search input only disabled during initial load
         />
       </div>
     </div>

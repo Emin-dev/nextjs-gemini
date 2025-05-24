@@ -4,92 +4,40 @@ import { Button } from "@/components/ui/button";
 import type { Todo } from "../../types";
 
 interface UndoBannerProps {
-  todo: Todo;
-  isStage1UndoActive: boolean;
-  stage1UndoCountdown: number;
-  onUndo?: () => void; // Optional: Only for stage 1 (soft delete undo)
+  todo: Todo; // Retained for context in aria-label if needed, though text might be better passed directly
   isRedBorderPhase: boolean;
-  redBorderCountdown: number;
-  onRestorePendingDeletion?: () => void; // Optional: Only for stage 2 (pending final deletion undo)
-  isBatchRestorePhase?: boolean;
-  batchRestoreCountdown?: number;
-  onRestoreBatch?: () => void;
-  batchTaskCount?: number;
+  redBorderCountdown: string; // Changed to string as it's pre-formatted
+  onRestorePendingDeletion?: () => void; 
 }
 
 export function UndoBanner({
   todo,
-  isStage1UndoActive,
-  stage1UndoCountdown,
-  onUndo,
   isRedBorderPhase,
   redBorderCountdown,
   onRestorePendingDeletion,
-  isBatchRestorePhase,
-  batchRestoreCountdown,
-  onRestoreBatch,
-  batchTaskCount
 }: UndoBannerProps) {
 
-  // Batch Restore Banner (Footer Global)
-  if (isBatchRestorePhase && onRestoreBatch && batchTaskCount && typeof batchRestoreCountdown !== 'undefined') {
-    return (
-      <div className="p-3 bg-blue-600/90 border border-blue-500 rounded-md flex flex-col sm:flex-row justify-between items-center gap-2 animate-pulse">
-        <p className="text-sm sm:text-base font-bold text-white text-center sm:text-left">
-          Restore batch of {batchTaskCount} tasks? Global restore ends in {batchRestoreCountdown}s...
-        </p>
-        <Button 
-          onClick={onRestoreBatch} 
-          variant="default"
-          size="sm"
-          className="bg-blue-400 hover:bg-blue-300 text-white font-bold text-xs sm:text-sm px-3 py-1.5 h-auto focus:ring-blue-500 focus:ring-offset-blue-600 whitespace-nowrap"
-          aria-label={`Restore batch of ${batchTaskCount} tasks`}
-        >
-          Restore Batch ({batchRestoreCountdown}s)
-        </Button>
-      </div>
-    );
-  }
-
-  // Stage 1 Undo Active (Yellow Banner for initial 20s delete)
-  if (isStage1UndoActive && onUndo) { // Check if onUndo exists
-    return (
-      <div className="mt-2 p-1.5 bg-yellow-500/90 border border-yellow-400 rounded-md flex justify-center items-center animate-pulseSlow">
-        <Button 
-          onClick={onUndo} 
-          variant="default"
-          size="sm"
-          className="bg-yellow-300 hover:bg-yellow-200 text-black font-bold text-xs sm:text-sm px-3 py-1 h-auto focus:ring-yellow-400 focus:ring-offset-yellow-500 whitespace-nowrap"
-          aria-label={`Undo delete for task: ${todo.text}`}
-        >
-          Undo ({stage1UndoCountdown}s)
-        </Button>
-      </div>
-    );
-  }
-
-  // Red Border Phase: Task is pending permanent deletion.
+  // Red Border Phase: Task is pending permanent deletion (Stage 2 grace period / part of emptying trash batch).
   if (isRedBorderPhase && onRestorePendingDeletion) {
     return (
-      <div className="mt-2 p-2 bg-red-600/90 border border-red-500 rounded-md flex flex-col sm:flex-row justify-between items-center gap-1.5 animate-pulse">
-        <p className="text-sm sm:text-base font-bold text-white text-center sm:text-left">
-          Permanently deleting in {redBorderCountdown}s...
+      <div className="mt-2 p-2 bg-red-600/80 border border-red-500 rounded-md flex flex-col sm:flex-row justify-between items-center gap-1.5 animate-pulse">
+        <p className="text-xs sm:text-sm font-medium text-white text-center sm:text-left">
+          Permanently deleting in {redBorderCountdown}...
         </p>
         <Button 
           onClick={onRestorePendingDeletion} 
           variant="default"
-          size="sm"
-          className="bg-red-400 hover:bg-red-300 text-white font-bold text-xs sm:text-sm px-2 sm:px-3 py-1 h-auto focus:ring-red-500 focus:ring-offset-red-600 whitespace-nowrap"
-          aria-label={`Undo permanent deletion for task: ${todo.text}`}
+          size="xs" // Made button even smaller for this banner context
+          className="bg-red-400 hover:bg-red-300 text-white font-semibold text-xs px-2 py-0.5 h-auto focus:ring-red-500 focus:ring-offset-red-600 whitespace-nowrap"
+          // It might be better to pass the task text directly to the aria-label if needed for more clarity
+          aria-label={`Undo permanent deletion for task. ${redBorderCountdown} remaining.`}
+          title={`Undo permanent deletion (${redBorderCountdown} remaining)`}
         >
-          Undo ({redBorderCountdown}s)
+          Undo ({redBorderCountdown})
         </Button>
       </div>
     );
   }
   
-  // The fallback case for already deleted items with an active undo seems covered by the first block 
-  // if `isStage1UndoActive` is true even when `todo.isDeleted` is true.
-
-  return null; // No active undo state for this specific task or covered by global batch restore
+  return null; // No active red border phase for this specific task, or no handler provided.
 }

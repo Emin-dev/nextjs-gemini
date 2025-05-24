@@ -2,22 +2,20 @@
 
 import { Button } from '@/components/ui/button';
 import type { EmptyingTrashBatchDetails, FilterValue } from '../../types';
-// STAGE_4_GLOBAL_RESTORE_WINDOW is implicitly handled by showGlobalRestoreButton and globalRestoreTimeRemainingString props
 
 interface TodoFooterProps {
   activeTasksCount: number;
   softDeletedAndStage2Count: number;
   filter: FilterValue;
   emptyingTrashBatch: EmptyingTrashBatchDetails | null;
-  itemsEligibleForEmptyTrash: number;
-  onInitiateEmptyTrash: () => void;
+  itemsEligibleForEmptyTrash: number; 
+  onInitiateEmptyTrash: () => void; 
   onRestoreAllPendingDeletion: () => void;
-  globalRestoreTimeRemainingString: string; // Direct string from app/page.tsx
-  showGlobalRestoreButton: boolean; // Direct boolean from app/page.tsx
+  globalRestoreTimeRemainingString: string; 
+  showGlobalRestoreButton: boolean; 
   isClient: boolean;
   initialLoadComplete: boolean;
   isActionInProgress: boolean;
-  // currentTime: number; // No longer explicitly needed here if button visibility is passed as prop
 }
 
 export function TodoFooter({
@@ -36,39 +34,33 @@ export function TodoFooter({
 }: TodoFooterProps) {
   if (!isClient || !initialLoadComplete) return null;
 
-  // Button to start the "Empty Trash" process (1-minute individual timers)
-  const displayEmptyTrashButton = 
+  const displayClearDeletedButton = 
     filter === 'deleted' && 
     itemsEligibleForEmptyTrash > 0 &&
     (!emptyingTrashBatch || emptyingTrashBatch.isRestored || emptyingTrashBatch.allIndividualTimersEndedForBatch);
-    // Show if in deleted filter, items are eligible, AND
-    // (no batch active OR current batch was restored OR current batch finished all timers (allowing a new one))
-
-  // Green button to restore the entire batch after all individual 1-min timers have ended.
-  // Visibility is now controlled by the `showGlobalRestoreButton` prop from app/page.tsx
 
   return (
-    <div className="text-xs sm:text-sm text-slate-500 flex flex-col sm:flex-row justify-between items-center gap-2 sm:gap-4 pt-4 border-t border-slate-700">
+    <div className="text-xs sm:text-sm text-slate-400 flex flex-col sm:flex-row justify-between items-center gap-3 sm:gap-4 pt-4 border-t border-slate-700">
       <div className="text-center sm:text-left">
-        You have <span className="font-bold text-sky-400 mx-1">{activeTasksCount}</span> active task(s).
+        You have <span className="font-bold text-cyan-400 mx-1">{activeTasksCount}</span> active task(s).
         {softDeletedAndStage2Count > 0 && filter !== 'deleted' && (
-          <span className="ml-1 text-yellow-400">({softDeletedAndStage2Count} in trash)</span>
+          <span className="ml-1 text-yellow-500">({softDeletedAndStage2Count} deleted)</span>
         )}
          {filter === 'deleted' && softDeletedAndStage2Count > 0 && (
-          <span className="ml-1 text-yellow-400">({softDeletedAndStage2Count} item(s) in trash)</span>
+          <span className="ml-1 text-yellow-500">({softDeletedAndStage2Count} task(s) in Deleted)</span>
         )}
       </div>
       <div className="flex gap-2">
-        {displayEmptyTrashButton && (
+        {displayClearDeletedButton && (
             <Button
-            onClick={onInitiateEmptyTrash}
+            onClick={onInitiateEmptyTrash} 
             variant="destructive"
             size="sm"
-            className="bg-red-500 hover:bg-red-600 text-white font-semibold focus:ring-red-400"
-            aria-label={`Initiate final deletion for ${itemsEligibleForEmptyTrash} tasks`}
+            className="bg-red-500 hover:bg-red-600 text-white font-semibold focus:ring-red-400 focus:ring-offset-slate-800"
+            aria-label={`Initiate permanent deletion for ${itemsEligibleForEmptyTrash} deleted tasks`}
             disabled={isActionInProgress && !(emptyingTrashBatch && emptyingTrashBatch.isRestored)}
             >
-            Empty Trash ({itemsEligibleForEmptyTrash})
+            Clear Deleted ({itemsEligibleForEmptyTrash})
             </Button>
         )}
         {showGlobalRestoreButton && emptyingTrashBatch && !emptyingTrashBatch.isRestored && (
@@ -76,9 +68,9 @@ export function TodoFooter({
                 onClick={onRestoreAllPendingDeletion}
                 variant="default"
                 size="sm"
-                className="bg-green-500 hover:bg-green-600 text-white font-semibold focus:ring-green-400"
-                aria-label={`Restore ${emptyingTrashBatch.tasksSnapshot.length} tasks from recently emptied batch. ${globalRestoreTimeRemainingString} left.`}
-                disabled={isActionInProgress && !showGlobalRestoreButton} // Disable if another action is broadly in progress, unless this button IS the current main available action
+                className="bg-green-500 hover:bg-green-600 text-white font-semibold focus:ring-green-400 focus:ring-offset-slate-800"
+                aria-label={`Restore ${emptyingTrashBatch.tasksSnapshot.length} tasks from recently cleared batch. ${globalRestoreTimeRemainingString} left.`}
+                disabled={isActionInProgress && !showGlobalRestoreButton} 
             >
                 Restore Batch ({emptyingTrashBatch.tasksSnapshot.length}) - {globalRestoreTimeRemainingString}
             </Button>

@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 
 interface TodoAddFormProps {
   onAddTodo: (text: string) => void;
-  disabled?: boolean; // Added disabled prop
+  disabled?: boolean;
 }
 
 export interface TodoAddFormHandle {
@@ -23,7 +23,6 @@ export const TodoAddForm = forwardRef<TodoAddFormHandle, TodoAddFormProps>(({ on
     }
   }));
 
-  // Focus the input field whenever the component mounts or the disabled state changes to false
   useEffect(() => {
     if (!disabled) {
       inputRef.current?.focus();
@@ -31,12 +30,11 @@ export const TodoAddForm = forwardRef<TodoAddFormHandle, TodoAddFormProps>(({ on
   }, [disabled]);
 
   const handleSubmit = () => {
-    if (disabled) return; // Prevent submission if disabled
+    if (disabled) return;
     const trimmedText = newTodoText.trim();
     if (trimmedText === '') return;
     onAddTodo(trimmedText);
     setNewTodoText('');
-    // Ensure focus is returned to the input after adding a task
     if (!disabled) {
       inputRef.current?.focus();
     }
@@ -49,22 +47,22 @@ export const TodoAddForm = forwardRef<TodoAddFormHandle, TodoAddFormProps>(({ on
   };
 
   return (
-    <div className="flex gap-4 mb-6">
+    <div className="flex gap-3 mb-6 items-center"> {/* Reduced gap and added items-center */}
       <Input
-        ref={inputRef} // Assign ref to the input element
+        ref={inputRef}
         type="text"
         value={newTodoText}
         onChange={(e) => setNewTodoText(e.target.value)}
-        placeholder="Add a new task"
-        className="flex-grow bg-slate-700 border-slate-600 text-white placeholder-slate-400 focus:ring-sky-500 focus:border-sky-500"
+        placeholder="Add a new task..." /* Added ellipsis */
+        className="flex-grow bg-slate-700 border-slate-600 text-white placeholder-slate-400 focus:ring-cyan-500 focus:border-cyan-500 h-11 px-4 text-base" /* Consistent height, padding, text size, updated focus */
         onKeyDown={handleKeyDown}
         aria-label="New task text"
-        disabled={disabled} // Apply disabled prop
+        disabled={disabled}
       />
       <Button
         onClick={handleSubmit}
-        className="bg-sky-600 hover:bg-sky-700 text-white"
-        disabled={disabled || newTodoText.trim() === ''} // Apply disabled prop
+        className="bg-cyan-600 hover:bg-cyan-700 text-white h-11 px-5 text-sm font-medium whitespace-nowrap" /* Consistent height, padding, updated colors, added font style */
+        disabled={disabled || newTodoText.trim() === ''}
       >
         Add Task
       </Button>
@@ -72,4 +70,4 @@ export const TodoAddForm = forwardRef<TodoAddFormHandle, TodoAddFormProps>(({ on
   );
 });
 
-TodoAddForm.displayName = 'TodoAddForm'; // for better debugging
+TodoAddForm.displayName = 'TodoAddForm';
