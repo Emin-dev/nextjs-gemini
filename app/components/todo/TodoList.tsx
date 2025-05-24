@@ -1,20 +1,21 @@
 'use client';
 
 import { TodoItem } from './TodoItem';
-import type { Todo, UndoableActionDetails, EmptyingTrashBatchDetails, FilterValue } from '../../types'; // Added FilterValue
+import type { Todo, UndoableActionDetails, EmptyingTrashBatchDetails, FilterValue } from '../../types';
 
 interface TodoListProps {
   todos: Todo[];
   onToggle: (id: number) => void;
   onRemove: (id: number) => void; 
   onUpdateText: (id: number, newText: string) => void;
+  onRestoreItem: (id: number) => void; // Added for individual restore
   undoableActions: Map<number, UndoableActionDetails>; 
   onUndo: (id: number) => void; 
   undoTimeoutDuration: number;
   onRestorePendingDeletion?: (id: number) => void; 
   currentTime: number; 
   emptyingTrashBatch: EmptyingTrashBatchDetails | null; 
-  currentFilter: FilterValue; // Added currentFilter
+  currentFilter: FilterValue;
 }
 
 export function TodoList({ 
@@ -22,13 +23,14 @@ export function TodoList({
   onToggle, 
   onRemove, 
   onUpdateText, 
+  onRestoreItem, // Destructure new prop
   undoableActions, 
   onUndo, 
   undoTimeoutDuration,
   onRestorePendingDeletion,
   currentTime,
   emptyingTrashBatch,
-  currentFilter // Added currentFilter
+  currentFilter
 }: TodoListProps) {
 
   return (
@@ -42,13 +44,14 @@ export function TodoList({
             onToggle={onToggle}
             onRemove={onRemove}
             onUpdateText={onUpdateText}
+            onRestoreItem={onRestoreItem} // Pass onRestoreItem to TodoItem
             undoableAction={currentUndoAction}
             onUndo={onUndo}
             undoTimeoutDuration={undoTimeoutDuration}
             onRestorePendingDeletion={onRestorePendingDeletion}
             currentTime={currentTime}
             emptyingTrashBatch={emptyingTrashBatch}
-            currentFilter={currentFilter} // Pass currentFilter to TodoItem
+            currentFilter={currentFilter}
           />
         );
       })}

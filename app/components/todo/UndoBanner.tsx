@@ -4,9 +4,9 @@ import { Button } from "@/components/ui/button";
 import type { Todo } from "../../types";
 
 interface UndoBannerProps {
-  todo: Todo; // Retained for context in aria-label if needed, though text might be better passed directly
+  todo: Todo; 
   isRedBorderPhase: boolean;
-  redBorderCountdown: string; // Changed to string as it's pre-formatted
+  redBorderCountdown: string; 
   onRestorePendingDeletion?: () => void; 
 }
 
@@ -27,9 +27,8 @@ export function UndoBanner({
         <Button 
           onClick={onRestorePendingDeletion} 
           variant="default"
-          size="xs" // Made button even smaller for this banner context
-          className="bg-red-400 hover:bg-red-300 text-white font-semibold text-xs px-2 py-0.5 h-auto focus:ring-red-500 focus:ring-offset-red-600 whitespace-nowrap"
-          // It might be better to pass the task text directly to the aria-label if needed for more clarity
+          size="sm" // Changed from "xs" to "sm"
+          className="bg-red-400 hover:bg-red-300 text-white font-semibold text-xs px-2 py-1 h-auto focus:ring-red-500 focus:ring-offset-red-600 whitespace-nowrap"
           aria-label={`Undo permanent deletion for task. ${redBorderCountdown} remaining.`}
           title={`Undo permanent deletion (${redBorderCountdown} remaining)`}
         >
@@ -39,5 +38,5 @@ export function UndoBanner({
     );
   }
   
-  return null; // No active red border phase for this specific task, or no handler provided.
+  return null; 
 }

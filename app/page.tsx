@@ -57,6 +57,7 @@ export default function Home() {
     toggleTodo,
     updateTodoText,
     softDeleteTodo, 
+    restoreItem, // Get new function from hook
     handleUndo,
     emptyingTrashBatch, 
     initiateEmptyTrashProcess, 
@@ -190,7 +191,7 @@ export default function Home() {
     { value: 'all', label: 'All' },
     { value: 'active', label: 'Active' },
     { value: 'completed', label: 'Completed' },
-    { value: 'deleted', label: 'Deleted' }, // Updated label
+    { value: 'deleted', label: 'Deleted' },
   ];
 
   const emptyState = getEmptyStateMessage({
@@ -246,6 +247,7 @@ export default function Home() {
                   onToggle={toggleTodo}
                   onRemove={softDeleteTodo}
                   onUpdateText={updateTodoText}
+                  onRestoreItem={restoreItem} // Pass restoreItem to TodoList
                   undoableActions={undoableActions}
                   onUndo={handleUndo}
                   undoTimeoutDuration={UNDO_TIMEOUT}
@@ -256,7 +258,6 @@ export default function Home() {
                 />
               )
             )}
-             {/* Updated paragraph texts for 'deleted' filter state */}
              {isClient && initialLoadComplete && filter === 'deleted' && filteredAndSearchedTodos.length > 0 && !emptyingTrashBatch && itemsEligibleForClearAll > 0 && (
               <p className="text-center mt-4 text-xs sm:text-sm text-slate-400">
                 These are your deleted tasks. Use "Clear Deleted" to start the permanent deletion process.

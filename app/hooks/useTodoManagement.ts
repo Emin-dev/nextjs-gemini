@@ -95,6 +95,30 @@ export function useTodoManagement({
     }
   }, [currentTime, currentFilter, setTodos, showStatusMessage, undoableActions, FILTER_SWITCH_DELAY]);
 
+  const restoreItem = useCallback((id: number) => {
+    const todoToRestore = todos.find(t => t.id === id);
+    if (!todoToRestore) return;
+
+    setTodos(prev => prev.map(t => 
+      t.id === id 
+        ? { 
+            ...t, 
+            isDeleted: false, 
+            markedForDeletionAt: null, 
+            pendingFinalDeletionTimestamp: null, 
+            stage2BatchId: null 
+          } 
+        : t
+    ));
+    addUndoableAction(todoToRestore, 'restore'); // Make restore action undoable
+    showStatusMessage(`Task "${todoToRestore.text.substring(0,20)}..." restored.`);
+    resetInactivityTimer();
+    // Optionally, switch filter to 'all' or 'active' if desired after restore
+    // if (currentFilter === 'deleted') {
+    //   setFilter('all'); 
+    // }
+  }, [todos, setTodos, addUndoableAction, showStatusMessage, resetInactivityTimer]);
+
   const softDeleteTodo = useCallback((id: number) => {
     const todoToModify = todos.find(t => t.id === id);
     if (!todoToModify) return;
@@ -110,12 +134,19 @@ export function useTodoManagement({
     }
 
     if (todoToModify.isDeleted) {
+      // This is for items in the 'Deleted' filter that are *not* yet in stage 2 countdown.
+      // The action here is to initiate stage 2 (permanent deletion countdown).
+      // This is typically triggered by the "Clear Deleted (X)" button, not by clicking a delete icon on an already deleted item.
+      // For safety, we can prevent this specific path if not intended, or let it proceed if desired.
+      // For now, let's assume the main way to trigger stage 2 is the "Clear Deleted" button.
+      // If an individual item in 'Deleted' list has a 'delete' icon, it should perhaps be 'Clear Permanently Now'
+      // For current setup, this 'delete' icon on a deleted item is effectively a 'start permanent delete process for this item'
       setTodos(prev => prev.map(t => 
         t.id === id 
           ? { 
               ...t, 
               pendingFinalDeletionTimestamp: Date.now() + STAGE_2_GRACE_PERIOD_DURATION, 
-              stage2BatchId: null 
+              stage2BatchId: null // Individual item, not part of a batch yet
             } 
           : t
       ));
@@ -190,6 +221,7 @@ export function useTodoManagement({
     toggleTodo,
     updateTodoText,
     softDeleteTodo,
+    restoreItem, // Expose new function
     handleUndo: performUndo,
     emptyingTrashBatch, 
     emptyingTrashBatchRef, 
