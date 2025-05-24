@@ -215,17 +215,20 @@ export default function Home() {
         <Card className="bg-slate-800 shadow-2xl border-slate-700">
           <CardHeader className="pb-4">
             <div className="flex flex-col sm:flex-row justify-between items-center mb-4 gap-3 sm:gap-4">
-              <CardTitle className="text-2xl md:text-3xl text-sky-400 whitespace-nowrap" id="tasks-heading">Your Tasks</CardTitle>
-              <TodoControls 
-                filter={filter}
-                onFilterChange={setFilter}
-                searchQuery={searchQuery}
-                onSearchQueryChange={setSearchQuery}
-                filterOptions={filterOptions}
-                isClient={isClient}
-                initialLoadComplete={initialLoadComplete}
-                isActionInProgress={isActionInProgress}
-              />
+              <CardTitle className="text-2xl md:text-3xl text-sky-400 whitespace-nowrap flex-shrink-0" id="tasks-heading">Your Tasks</CardTitle>
+              {/* Added a wrapper div for TodoControls with flex-grow properties */}
+              <div className="w-full sm:flex-1 sm:min-w-0">
+                <TodoControls 
+                  filter={filter}
+                  onFilterChange={setFilter}
+                  searchQuery={searchQuery}
+                  onSearchQueryChange={setSearchQuery}
+                  filterOptions={filterOptions}
+                  isClient={isClient}
+                  initialLoadComplete={initialLoadComplete}
+                  isActionInProgress={isActionInProgress}
+                />
+              </div>
             </div>
           </CardHeader>
 

@@ -19,7 +19,7 @@ export function TodoItemSkeleton() {
               <div className="h-5 bg-slate-600 rounded w-3/4"></div>
             </div>
             {/* Optionally, a smaller line for subtext or shorter main text */}
-            {/* <div className="h-3 bg-slate-600 rounded w-1/2 mt-1"></div> */}
+            <div className="h-3 bg-slate-600 rounded w-1/2 mt-1"></div>
           </div>
         </div>
         <div className="flex flex-col items-center justify-start gap-1 self-start">
