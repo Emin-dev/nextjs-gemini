@@ -11,7 +11,7 @@ interface UseUndoableActionsProps {
   currentFilter: FilterValue;
   setFilter: (filter: FilterValue) => void;
   setSearchQuery: (query: string) => void;
-  focusInput: () => void; // Keep for other potential uses, but not here
+  focusInput: () => void; 
   resetInactivityTimer: () => void;
 }
 
@@ -21,7 +21,7 @@ export function useUndoableActions({
   currentFilter,
   setFilter,
   setSearchQuery,
-  focusInput, // Keep prop
+  focusInput,
   resetInactivityTimer,
 }: UseUndoableActionsProps) {
   const initialUndoableActions = useMemo(() => new Map<number, UndoableActionDetails>(), []);
@@ -86,19 +86,9 @@ export function useUndoableActions({
       }
     });
     
+    // Simplified update logic
     if (mapChanged || updatedActionsMap.size !== currentActionsAsMap.size) {
-        let allKeysMatch = updatedActionsMap.size === currentActionsAsMap.size;
-        if (allKeysMatch) {
-            for (const [key, value] of updatedActionsMap) {
-                if (!currentActionsAsMap.has(key) || JSON.stringify(currentActionsAsMap.get(key)) !== JSON.stringify(value)) {
-                    allKeysMatch = false;
-                    break;
-                }
-            }
-        }
-        if(!allKeysMatch){
-            setUndoableActions(updatedActionsMap);
-        }
+        setUndoableActions(updatedActionsMap);
     }
 
     return () => {
@@ -131,9 +121,8 @@ export function useUndoableActions({
     
     const todoTextForMessage = originalTodoForUndo.text ? `"${originalTodoForUndo.text.substring(0, 20)}..."` : "Task";
     showStatusMessage(`${todoTextForMessage} marked for deletion. Undo timer started.`);
-    // focusInput(); // Removed to prevent search interference
     resetInactivityTimer();
-  }, [clearSpecificUndoAction, setUndoableActions, showStatusMessage, resetInactivityTimer]); // Removed focusInput from dependencies
+  }, [clearSpecificUndoAction, setUndoableActions, showStatusMessage, resetInactivityTimer]);
 
   const performUndo = useCallback((idToUndo: number) => {
     let actionDetails: UndoableActionDetails | undefined;
@@ -163,9 +152,8 @@ export function useUndoableActions({
       setSearchQuery(''); 
     }
 
-    // focusInput(); // Removed to prevent search interference
     resetInactivityTimer();
-  }, [undoableActionsData, clearSpecificUndoAction, showStatusMessage, resetInactivityTimer, currentFilter, setFilter, setSearchQuery, setTodos]); // Removed focusInput from dependencies
+  }, [undoableActionsData, clearSpecificUndoAction, showStatusMessage, resetInactivityTimer, currentFilter, setFilter, setSearchQuery, setTodos]);
 
   const getUndoableActionsMap = useCallback(() => {
     if (undoableActionsData instanceof Map) {

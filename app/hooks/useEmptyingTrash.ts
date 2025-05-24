@@ -76,13 +76,13 @@ export function useEmptyingTrash({
 
   const initiateEmptyTrashProcess = useCallback(() => {
     if (emptyingTrashBatchRef.current && !emptyingTrashBatchRef.current.allIndividualTimersEndedForBatch) {
-      showStatusMessage("An existing empty trash process is still finalizing individual task timers.");
+      showStatusMessage("An existing empty trash process is still finalizing individual task timers. Please wait.");
       return;
     }
-    if (emptyingTrashBatchRef.current && emptyingTrashBatchRef.current.allIndividualTimersEndedForBatch && !emptyingTrashBatchRef.current.isRestored) {
-      showStatusMessage("An empty trash batch is awaiting global restore or timeout. Cannot start a new one yet.");
-      return;
-    }
+    // Removed the check that prevented starting a new batch if a previous one was in its global restore window.
+    // A new batch can now be started for any items currently in the 'Deleted' filter 
+    // that are not already part of an active pendingFinalDeletionTimestamp countdown.
+
     const tasksToEmpty = todos.filter(todo => todo.isDeleted && !todo.markedForDeletionAt && !todo.pendingFinalDeletionTimestamp);
     if (tasksToEmpty.length === 0) {
       showStatusMessage("No tasks in trash to empty.");
@@ -105,6 +105,7 @@ export function useEmptyingTrash({
       tasksSnapshot,
       batchInitiationTime,
       allIndividualTimersEndedForBatch: false,
+      // isRestored and batchCompletionTime are not set here; they are set later.
     });
     showStatusMessage(`${tasksToEmpty.length} task(s) starting 1-minute final deletion countdown.`);
     focusInput();
@@ -116,13 +117,14 @@ export function useEmptyingTrash({
     setTodos(prevTodos => prevTodos.map(todo => {
       if (todo.id === taskId && todo.pendingFinalDeletionTimestamp && todo.stage2BatchId) {
         taskText = todo.text;
-        return { ...todo, pendingFinalDeletionTimestamp: null, stage2BatchId: null };
+        return { ...todo, pendingFinalDeletionTimestamp: null, stage2BatchId: null }; // Effectively removes it from the current batch processing
       }
       return todo;
     }));
     if (taskText) {
       showStatusMessage(`Final deletion of "${taskText.substring(0,20)}..." undone.`);
     }
+    // No need to modify emptyingTrashBatch here, checkAndUpdateBatchCompletion will handle batch status.
     focusInput();
     resetInactivityTimer();
   }, [setTodos, showStatusMessage, focusInput, resetInactivityTimer]);
@@ -135,13 +137,14 @@ export function useEmptyingTrash({
     autoFinalDeleteIntervalRef.current = setInterval(() => {
       const now = Date.now(); 
       let tasksPermanentlyDeletedThisTick = 0;
-      let todosAfterDeletion: Todo[] = [];
+      let todosAfterDeletion: Todo[] = []; // To pass the potentially modified list to checkAndUpdateBatchCompletion
 
       setTodos(prevTodosInInterval => {
+        // Filter out tasks whose pendingFinalDeletionTimestamp has passed
         todosAfterDeletion = prevTodosInInterval.filter(todo => {
           if (todo.pendingFinalDeletionTimestamp && now >= todo.pendingFinalDeletionTimestamp) {
             tasksPermanentlyDeletedThisTick++;
-            return false; 
+            return false; // Remove task
           }
           return true;
         });
@@ -149,9 +152,10 @@ export function useEmptyingTrash({
         if (tasksPermanentlyDeletedThisTick > 0) {
           showStatusMessage(`${tasksPermanentlyDeletedThisTick} task(s) permanently deleted.`);
         }
-        return todosAfterDeletion;
+        return todosAfterDeletion; // Return the updated list
       });
       
+      // Call checkAndUpdateBatchCompletion if tasks were deleted OR if there's an active batch whose individual timers might not have all ended.
       if(tasksPermanentlyDeletedThisTick > 0 || (emptyingTrashBatchRef.current && !emptyingTrashBatchRef.current.allIndividualTimersEndedForBatch)){
          checkAndUpdateBatchCompletion(todosAfterDeletion, emptyingTrashBatchRef, setEmptyingTrashBatch, showStatusMessage, now);
       }
@@ -159,7 +163,7 @@ export function useEmptyingTrash({
     }, AUTO_FINAL_DELETE_INTERVAL);
 
     return () => { if (autoFinalDeleteIntervalRef.current) clearInterval(autoFinalDeleteIntervalRef.current); };
-  }, [showStatusMessage, setEmptyingTrashBatch, setTodos]);
+  }, [showStatusMessage, setEmptyingTrashBatch, setTodos]); // Removed todos from dependency array as it's accessed via setTodos callback
 
   const restoreBatchFromEmptyTrash = useCallback(() => {
     const batchToRestore = emptyingTrashBatchRef.current;
@@ -167,24 +171,31 @@ export function useEmptyingTrash({
       showStatusMessage("No batch eligible for restoration or already restored.");
       return;
     }
+
+    // Restore tasks from the snapshot
     const restoredTasks = batchToRestore.tasksSnapshot.map(snapTodo => ({
       ...snapTodo,
-      isDeleted: true,
+      isDeleted: true, // They are restored to the 'Deleted' items list
       markedForDeletionAt: null,
       pendingFinalDeletionTimestamp: null,
       stage2BatchId: null,
     }));
+
     setTodos(prevTodos => {
       const taskIdsAlreadyPresent = new Set(prevTodos.map(t => t.id));
+      // Filter out tasks from restoredTasks that are somehow already in prevTodos (e.g., if restored by another means, though unlikely here)
       const newTasksToAdd = restoredTasks.filter(rt => !taskIdsAlreadyPresent.has(rt.id));
       return [...prevTodos, ...newTasksToAdd];
     });
+
+    // Mark the batch as restored
     setEmptyingTrashBatch(prevBatch => {
         if(prevBatch && prevBatch.batchId === batchToRestore.batchId){
             return { ...prevBatch, isRestored: true };
         }
         return prevBatch;
     });
+
     showStatusMessage(`Batch of ${restoredTasks.length} task(s) restored to 'Deleted' items.`);
     focusInput();
     resetInactivityTimer();
@@ -196,7 +207,7 @@ export function useEmptyingTrash({
     initiateEmptyTrashProcess,
     undoIndividualPendingFinalDeletion,
     restoreBatchFromEmptyTrash,
-    setEmptyingTrashBatch, 
-    removeEmptyingTrashStorage
+    setEmptyingTrashBatch, // Exporting for potential direct manipulation if ever needed (e.g. clearing storage)
+    removeEmptyingTrashStorage // Exporting for explicit clearing of the batch from storage
   };
 }

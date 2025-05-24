@@ -187,15 +187,8 @@ export function TodoItem({
           
           <UndoBanner 
             todo={todo}
-            undoableAction={undoableAction}
             onUndo={isStage1UndoActive && onUndo ? () => onUndo(todo.id) : undefined}
             onRestorePendingDeletion={isRedBorderPhase && onRestorePendingDeletion && currentFilter === 'deleted' ? () => onRestorePendingDeletion(todo.id) : undefined}
-            currentTime={currentTime}
-            undoTimeoutDuration={undoTimeoutDuration}
-            filterSwitchDelay={FILTER_SWITCH_DELAY}
-            stage2GracePeriodDuration={STAGE_2_GRACE_PERIOD_DURATION}
-            isYellowBorderPhase={isYellowBorderPhase}
-            yellowBorderCountdown={yellowBorderCountdown}
             isRedBorderPhase={isRedBorderPhase}
             redBorderCountdown={redBorderCountdown}
             isStage1UndoActive={isStage1UndoActive}

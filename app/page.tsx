@@ -179,7 +179,12 @@ export default function Home() {
     ).length;
   }, [todos, undoableActions]);
 
-  const isActionInProgress = undoableActions.size > 0 || (!!emptyingTrashBatch && !emptyingTrashBatch.isRestored) ;
+  const isActionInProgress = useMemo(() => {
+    return undoableActions.size > 0 || 
+           (!!emptyingTrashBatch && 
+            !emptyingTrashBatch.allIndividualTimersEndedForBatch && 
+            !emptyingTrashBatch.isRestored);
+  }, [undoableActions, emptyingTrashBatch]);
 
   const filterOptions: { value: FilterValue; label: string }[] = [
     { value: 'all', label: 'All' },
