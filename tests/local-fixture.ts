@@ -8,12 +8,19 @@ const imageFixture = Buffer.from(
 );
 
 export const test = base.extend<{ localRuntime: undefined }>({
-  localRuntime: [async ({ page }, use) => {
+  localRuntime: [async ({ page }, use, testInfo) => {
     const runtimeErrors: string[] = [];
     const unexpectedRequests: string[] = [];
     page.on("pageerror", (error) => runtimeErrors.push(error.message));
     page.on("console", (message) => {
-      if (message.type() === "error") runtimeErrors.push(message.text());
+      // Allow only the expected console resource error for the explicitly
+      // annotated 404 document. Other resource and runtime errors still fail.
+      const expectedDocument404 = testInfo.annotations.some((annotation) =>
+        annotation.type === "expected-document-404" &&
+        message.location().url === `http://127.0.0.1:4173${annotation.description}` &&
+        message.text() === "Failed to load resource: the server responded with a status of 404 (Not Found)",
+      );
+      if (message.type() === "error" && !expectedDocument404) runtimeErrors.push(message.text());
     });
     await page.route("**/*", async (route) => {
       const url = new URL(route.request().url());

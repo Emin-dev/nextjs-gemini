@@ -1,8 +1,13 @@
 import { test, expect } from "./local-fixture";
 
-test("unknown routes return 404", async ({ request }) => {
-  const response = await request.get("/ci-smoke-missing-route");
-  expect(response.status()).toBe(404);
+test("unknown routes return 404", {
+  annotation: { type: "expected-document-404", description: "/ci-smoke-missing-route" },
+}, async ({ page }, testInfo) => {
+  const response = await page.goto("/ci-smoke-missing-route");
+  expect(response?.status()).toBe(404);
+  await expect(page.getByRole("heading", { name: "404", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "This page could not be found.", exact: true })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("not-found.png"), fullPage: true, animations: "disabled" });
 });
 
 test("todo create, persistence, completion, editing, search and undo", async ({ page }, testInfo) => {
