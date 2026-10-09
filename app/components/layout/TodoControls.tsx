@@ -29,7 +29,6 @@ export function TodoControls({
   filterOptions,
   isClient,
   initialLoadComplete,
-  isActionInProgress // Prop is still received
 }: TodoControlsProps) {
   if (!isClient) return null;
 

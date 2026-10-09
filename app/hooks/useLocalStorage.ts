@@ -55,13 +55,14 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val
     try {
       const item = window.localStorage.getItem(key);
       const currentStoredValue = item ? JSON.parse(item) : initialValue;
-      if (JSON.stringify(currentStoredValue) !== JSON.stringify(storedValue)) {
-         setStoredValue(currentStoredValue);
-      }
+      setStoredValue(previousValue =>
+        JSON.stringify(currentStoredValue) !== JSON.stringify(previousValue)
+          ? currentStoredValue
+          : previousValue
+      );
     } catch (error) {
       console.error(`Error syncing localStorage key “${key}”:`, error);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, initialValue]); 
 
   return [storedValue, setValue, removeValue];

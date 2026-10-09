@@ -11,7 +11,6 @@ interface UndoBannerProps {
 }
 
 export function UndoBanner({
-  todo,
   isRedBorderPhase,
   redBorderCountdown,
   onRestorePendingDeletion,

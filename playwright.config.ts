@@ -2,6 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./tests",
+  testMatch: "**/*.spec.ts",
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: 0,
@@ -9,7 +10,7 @@ export default defineConfig({
   reporter: "list",
   timeout: 30_000,
   globalTimeout: 180_000,
-  use: { baseURL: "http://127.0.0.1:4173", trace: "off" },
+  use: { baseURL: "http://127.0.0.1:4173", trace: "off", screenshot: "on" },
   projects: [
     { name: "desktop", use: { ...devices["Desktop Chrome"] } },
     { name: "mobile", use: { ...devices["Pixel 7"] } },

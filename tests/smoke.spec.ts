@@ -1,55 +1,18 @@
-import { test, expect } from "@playwright/test";
-
-// No credentials, production data, or outbound actions. Remote task artwork is
-// fulfilled locally so synthetic todo IDs never reach the image provider.
-const imageFixture = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGP4DwQACfsD/fteaysAAAAASUVORK5CYII=",
-  "base64",
-);
-let runtimeErrors: string[];
-let unexpectedRequests: string[];
-
-test.beforeEach(async ({ page }) => {
-  runtimeErrors = [];
-  unexpectedRequests = [];
-  page.on("pageerror", (error) => runtimeErrors.push(error.message));
-  page.on("console", (message) => {
-    if (message.type() === "error") runtimeErrors.push(message.text());
-  });
-  await page.route("**/*", async (route) => {
-    const url = new URL(route.request().url());
-    const imageSource = url.searchParams.get("url");
-    if (
-      url.hostname === "picsum.photos" ||
-      (url.pathname === "/_next/image" && imageSource?.startsWith("https://picsum.photos/"))
-    ) {
-      await route.fulfill({ status: 200, contentType: "image/png", body: imageFixture });
-    } else if (url.origin === "http://127.0.0.1:4173") {
-      await route.continue();
-    } else {
-      unexpectedRequests.push(`${route.request().method()} ${url.origin}${url.pathname}`);
-      await route.abort();
-    }
-  });
-});
-
-test.afterEach(() => {
-  expect(runtimeErrors, "browser runtime and hydration errors").toEqual([]);
-  expect(unexpectedRequests, "unexpected external requests").toEqual([]);
-});
+import { test, expect } from "./local-fixture";
 
 test("unknown routes return 404", async ({ request }) => {
   const response = await request.get("/ci-smoke-missing-route");
   expect(response.status()).toBe(404);
 });
 
-test("todo create, persistence, completion, editing, search and undo", async ({ page }) => {
+test("todo create, persistence, completion, editing, search and undo", async ({ page }, testInfo) => {
   const response = await page.goto("/");
   expect(response?.status()).toBe(200);
   const original = "CI synthetic task";
   const edited = `${original} edited`;
   const addInput = page.getByRole("textbox", { name: "New task text" });
   await expect(addInput).toBeEnabled();
+  await page.screenshot({ path: testInfo.outputPath("homepage.png"), fullPage: true, animations: "disabled" });
   await expect(page.getByRole("button", { name: "Add Task", exact: true })).toBeDisabled();
   await addInput.fill(original);
   await page.getByRole("button", { name: "Add Task", exact: true }).click();

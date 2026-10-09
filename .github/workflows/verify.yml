@@ -29,6 +29,12 @@ jobs:
         run: npm ci --no-fund
       - name: Check dependency advisories
         run: npm audit --audit-level=low
+      - name: Check source lint
+        run: npm run lint
+      - name: Check focused source regressions
+        run: npm run test:source
+      - name: Check undo persistence
+        run: npm run test:undo
       - name: Build production app
         run: npm run build
       - name: Check TypeScript
@@ -37,5 +43,11 @@ jobs:
         run: npx --no-install playwright install --with-deps chromium
       - name: Test local application
         run: npm run test:smoke
-      - name: Report outstanding lint validation
-        run: echo "::warning::Lint remains blocked by the unpatched braces advisory in the compatible Next.js 15 tooling. See VERIFICATION.md. No lint pass is claimed."
+      - name: Save synthetic browser screenshots
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: browser-evidence
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 1

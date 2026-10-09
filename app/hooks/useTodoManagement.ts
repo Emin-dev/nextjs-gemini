@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useCallback } from 'react';
-import type { Todo, FilterValue, EmptyingTrashBatchDetails } from '../types';
+import type { Todo, FilterValue } from '../types';
 import {
   LOCAL_STORAGE_KEY,
   FILTER_SWITCH_DELAY, 
@@ -24,8 +24,6 @@ interface UseTodoManagementProps {
 }
 
 export function useTodoManagement({
-  isClient,
-  initialLoadComplete,
   showStatusMessage,
   focusInput,
   resetInactivityTimer,
@@ -67,7 +65,7 @@ export function useTodoManagement({
   });
 
   useEffect(() => {
-    let itemsToMove: Todo[] = [];
+    const itemsToMove: Todo[] = [];
     let wasUpdated = false;
     setTodos(currentTodos => {
         const updatedTodos = currentTodos.map(todo => {
@@ -93,7 +91,7 @@ export function useTodoManagement({
             : `"${itemsToMove[0].text.substring(0, 20)}..." and ${itemsToMove.length - 1} other(s) moved to Deleted.`;
         showStatusMessage(message);
     }
-  }, [currentTime, currentFilter, setTodos, showStatusMessage, undoableActions, FILTER_SWITCH_DELAY]);
+  }, [currentTime, currentFilter, setTodos, showStatusMessage, undoableActions]);
 
   const restoreItem = useCallback((id: number) => {
     const todoToRestore = todos.find(t => t.id === id);
@@ -158,7 +156,7 @@ export function useTodoManagement({
     focusInput();
     resetInactivityTimer();
 
-  }, [todos, setTodos, undoableActions, addUndoableAction, showStatusMessage, focusInput, resetInactivityTimer, STAGE_2_GRACE_PERIOD_DURATION]);
+  }, [todos, setTodos, addUndoableAction, showStatusMessage, focusInput, resetInactivityTimer]);
 
   const addTodo = useCallback((text: string) => {
     const newTodo: Todo = { id: Date.now(), text, completed: false, isDeleted: false, markedForDeletionAt: null, pendingFinalDeletionTimestamp: null, stage2BatchId: null };
