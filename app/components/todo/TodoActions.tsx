@@ -1,7 +1,7 @@
 'use client';
 import React from 'react';
 import { Button } from '@/components/ui/button';
-import { Edit3, RotateCcw } from 'lucide-react'; // Added RotateCcw for Undo icon
+import { Edit3, RotateCcw, type LucideProps } from 'lucide-react'; // Added RotateCcw for Undo icon
 
 export type PrimaryActionType = 'initial-delete' | 'restore-from-trash' | 'undo-pending-deletion' | 'disabled' | 'undo-initial-delete';
 
@@ -12,7 +12,7 @@ interface TodoActionsProps {
   showMainActionButtons: boolean;
   onEdit: () => void;
   onPrimaryAction: () => void;
-  primaryActionIcon: React.ReactElement | null;
+  primaryActionIcon: React.ReactElement<LucideProps> | null;
   primaryActionLabel: string;
   primaryActionTitle: string;
   primaryActionDisabled?: boolean;
@@ -95,7 +95,7 @@ export function TodoActions({
             disabled={!isInteractive || primaryActionDisabled}
           >
             {primaryActionIcon && React.isValidElement(primaryActionIcon) ? 
-              React.cloneElement(primaryActionIcon as React.ReactElement<any>, { size: 18 }) : 
+              React.cloneElement(primaryActionIcon, { size: 18 }) : 
               primaryActionIcon}
           </Button>
       )}

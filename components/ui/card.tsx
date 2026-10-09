@@ -1,8 +1,8 @@
 import * as React from "react"
 import { cn } from "@/lib/utils"
 
-// Define props for the Card component, extending HTMLDivElement attributes
-interface CardProps extends React.HTMLAttributes<HTMLDivElement> {}
+// Define props for the Card component using HTMLDivElement attributes
+type CardProps = React.HTMLAttributes<HTMLDivElement>;
 
 const Card = React.forwardRef<
   HTMLDivElement, // Type of the element the ref will be attached to

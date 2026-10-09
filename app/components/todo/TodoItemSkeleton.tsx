@@ -1,7 +1,6 @@
 'use client';
 
 import { Card, CardContent } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox"; // Keep for consistent layout
 
 export function TodoItemSkeleton() {
   return (

@@ -167,7 +167,7 @@ export function useEmptyingTrash({
 
   const restoreBatchFromEmptyTrash = useCallback(() => {
     const batchToRestore = emptyingTrashBatchRef.current;
-    if (!batchToRestore || !batchToRestore.allIndividualTimersEndedForBatch || batchToRestore.isRestored) {
+    if (!batchToRestore?.allIndividualTimersEndedForBatch || batchToRestore.isRestored) {
       showStatusMessage("No batch eligible for restoration or already restored.");
       return;
     }

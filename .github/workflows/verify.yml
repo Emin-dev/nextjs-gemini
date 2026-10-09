@@ -1,0 +1,53 @@
+name: Verify application
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Install locked dependencies
+        run: npm ci --no-fund
+      - name: Check dependency advisories
+        run: npm audit --audit-level=low
+      - name: Check source lint
+        run: npm run lint
+      - name: Check focused source regressions
+        run: npm run test:source
+      - name: Check undo persistence
+        run: npm run test:undo
+      - name: Build production app
+        run: npm run build
+      - name: Check TypeScript
+        run: npm run typecheck
+      - name: Install isolated Chromium
+        run: npx --no-install playwright install --with-deps chromium
+      - name: Test local application
+        run: npm run test:smoke
+      - name: Save synthetic browser screenshots
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: browser-evidence
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 1
