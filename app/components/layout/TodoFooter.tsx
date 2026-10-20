@@ -58,7 +58,7 @@ export function TodoFooter({
             size="sm"
             className="bg-red-500 hover:bg-red-600 text-white font-semibold focus:ring-red-400 focus:ring-offset-slate-800"
             aria-label={`Initiate permanent deletion for ${itemsEligibleForEmptyTrash} deleted tasks`}
-            disabled={isActionInProgress && !(emptyingTrashBatch && emptyingTrashBatch.isRestored)}
+            disabled={isActionInProgress && !emptyingTrashBatch?.isRestored}
             >
             Clear Deleted ({itemsEligibleForEmptyTrash})
             </Button>

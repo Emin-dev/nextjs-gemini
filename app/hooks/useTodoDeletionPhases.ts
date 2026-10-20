@@ -21,7 +21,7 @@ export function useTodoDeletionPhases({
     if (!todo.markedForDeletionAt || !currentTime) return false;
     const timeSinceMarked = currentTime - todo.markedForDeletionAt;
     return !todo.isDeleted && timeSinceMarked < (UNDO_TIMEOUT + FILTER_SWITCH_DELAY) && undoableAction?.actionType === 'delete' && undoableAction.id === todo.id;
-  }, [todo.markedForDeletionAt, todo.isDeleted, currentTime, undoableAction]);
+  }, [todo.id, todo.markedForDeletionAt, todo.isDeleted, currentTime, undoableAction]);
 
   const yellowBorderCountdown = useMemo(() => {
     if (!isYellowBorderPhase || !todo.markedForDeletionAt || !currentTime || !undoableAction) return 0;

@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { TodoList } from './components/todo/TodoList';
 import { TodoAddForm, type TodoAddFormHandle } from './components/todo/TodoAddForm';
-import type { Todo, FilterValue, EmptyingTrashBatchDetails } from './types';
+import type { FilterValue } from './types';
 import { TodoListSkeleton } from './components/todo/TodoListSkeleton';
 import { VisibleStatusMessage } from './components/ui/StatusMessage';
 import { TodoControls } from './components/layout/TodoControls';
@@ -90,22 +90,24 @@ export default function Home() {
     setInitialLoadComplete(true);
 
     window.addEventListener('mousemove', resetInactivityTimer);
+    window.addEventListener('click', resetInactivityTimer);
     window.addEventListener('keydown', resetInactivityTimer);
     resetInactivityTimer(); 
     const timeUpdateInterval = setInterval(() => setCurrentTime(Date.now()), CURRENT_TIME_UPDATE_INTERVAL);
     
     return () => {
       window.removeEventListener('mousemove', resetInactivityTimer);
+      window.removeEventListener('click', resetInactivityTimer);
       window.removeEventListener('keydown', resetInactivityTimer);
       if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
       if (statusMessageTimerRef.current) clearTimeout(statusMessageTimerRef.current);
       clearInterval(timeUpdateInterval);
     };
-  }, [resetInactivityTimer, showStatusMessage]); 
+  }, [resetInactivityTimer]); 
 
   const showGlobalRestoreButton = useMemo(() => {
     if (filter !== 'deleted') return false; 
-    if (!emptyingTrashBatch || !emptyingTrashBatch.allIndividualTimersEndedForBatch || emptyingTrashBatch.isRestored) {
+    if (!emptyingTrashBatch?.allIndividualTimersEndedForBatch || emptyingTrashBatch.isRestored) {
       return false;
     }
     if (emptyingTrashBatch.batchCompletionTime) {
@@ -116,7 +118,7 @@ export default function Home() {
   }, [emptyingTrashBatch, currentTime, filter]);
 
   const globalRestoreTimeRemainingString = useMemo(() => {
-    if (!showGlobalRestoreButton || !emptyingTrashBatch || !emptyingTrashBatch.batchCompletionTime) return "";
+    if (!showGlobalRestoreButton || !emptyingTrashBatch?.batchCompletionTime) return "";
     const timeRemaining = (emptyingTrashBatch.batchCompletionTime + STAGE_4_GLOBAL_RESTORE_WINDOW) - currentTime;
     if (timeRemaining <= 0) return "0s";
     const minutes = Math.floor(timeRemaining / 60000);
@@ -130,7 +132,7 @@ export default function Home() {
       const isInYellowBorderUndo = undoableActions.has(todo.id) && undoableActions.get(todo.id)?.actionType === 'delete';
       const isPendingFinalDeletion = !!todo.pendingFinalDeletionTimestamp;
 
-      let matchesFilter;
+      let matchesFilter: boolean;
       switch (filter) {
         case 'all':
           matchesFilter = !todo.isDeleted || isInYellowBorderUndo || (todo.isDeleted && isPendingFinalDeletion);
@@ -209,7 +211,7 @@ export default function Home() {
   });
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-4 md:py-12 lg:py-16 bg-gradient-to-br from-slate-900 to-slate-700 text-white" onClick={resetInactivityTimer}>
+    <main className="flex min-h-screen flex-col items-center justify-center p-4 md:py-12 lg:py-16 bg-gradient-to-br from-slate-900 to-slate-700 text-white">
       <div className="w-full max-w-xl">
 
         <Card className="bg-slate-800 shadow-xl border-slate-700">
@@ -260,7 +262,7 @@ export default function Home() {
             )}
              {isClient && initialLoadComplete && filter === 'deleted' && filteredAndSearchedTodos.length > 0 && !emptyingTrashBatch && itemsEligibleForClearAll > 0 && (
               <p className="text-center mt-4 text-xs sm:text-sm text-slate-400">
-                These are your deleted tasks. Use "Clear Deleted" to start the permanent deletion process.
+                These are your deleted tasks. Use &quot;Clear Deleted&quot; to start the permanent deletion process.
               </p>
             )}
             {isClient && initialLoadComplete && filter === 'deleted' && emptyingTrashBatch && !emptyingTrashBatch.allIndividualTimersEndedForBatch && (

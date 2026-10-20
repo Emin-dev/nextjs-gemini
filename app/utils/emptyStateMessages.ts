@@ -1,4 +1,4 @@
-import type { Todo, FilterValue, EmptyingTrashBatchDetails, UndoableActionDetails } from '../types';
+import type { FilterValue, EmptyingTrashBatchDetails } from '../types';
 import { STAGE_4_GLOBAL_RESTORE_WINDOW } from '../lib/constants';
 
 interface GetEmptyStateMessageProps {
@@ -42,8 +42,8 @@ export function getEmptyStateMessage({
   if (filter === 'deleted') {
     if (emptyingTrashBatch && !emptyingTrashBatch.allIndividualTimersEndedForBatch) return { title: "Clearing Deleted Tasks...", message: "Tasks are in their 1-minute final countdown." };
     if (showGlobalRestoreButton) return { title: "Batch Cleared!", message: `You have ${globalRestoreTimeRemainingString} to restore the batch.` };
-    if (emptyingTrashBatch && emptyingTrashBatch.allIndividualTimersEndedForBatch && !emptyingTrashBatch.isRestored && emptyingTrashBatch.batchCompletionTime && (currentTime - emptyingTrashBatch.batchCompletionTime >= STAGE_4_GLOBAL_RESTORE_WINDOW) ) return { title: "Global Restore Window Expired", message: "The chance to restore the batch has passed." };
-    if (emptyingTrashBatch && emptyingTrashBatch.allIndividualTimersEndedForBatch && !emptyingTrashBatch.isRestored) return { title: "Global Restore Window Active", message: "The global restore window is currently active or just ended." }; 
+    if (emptyingTrashBatch?.allIndividualTimersEndedForBatch && !emptyingTrashBatch.isRestored && emptyingTrashBatch.batchCompletionTime && (currentTime - emptyingTrashBatch.batchCompletionTime >= STAGE_4_GLOBAL_RESTORE_WINDOW) ) return { title: "Global Restore Window Expired", message: "The chance to restore the batch has passed." };
+    if (emptyingTrashBatch?.allIndividualTimersEndedForBatch && !emptyingTrashBatch.isRestored) return { title: "Global Restore Window Active", message: "The global restore window is currently active or just ended." }; 
     if (itemsEligibleForEmptyTrash > 0) return { title: "Deleted folder contains tasks!", message: "Use 'Clear Deleted' to start permanent deletion process." };
     return { title: "Deleted folder is empty!", message: "You haven't deleted any tasks yet, or no tasks match the current search in Deleted." };
   }

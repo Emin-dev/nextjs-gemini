@@ -78,8 +78,6 @@ const config: Config = {
       // },
     },
   },
-  plugins: [
-    require('tw-animate-css'),
-  ],
+  plugins: [], // tw-animate-css is imported as CSS in app/globals.css.
 }
 export default config

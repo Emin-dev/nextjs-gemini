@@ -2,7 +2,7 @@
 
 import Image from 'next/image';
 import { Card, CardContent } from "@/components/ui/card";
-import { useRef, MouseEvent } from 'react'; 
+import { useRef, type MouseEvent } from 'react'; 
 import type { Todo, UndoableActionDetails, EmptyingTrashBatchDetails, FilterValue } from '../../types';
 import { useSaveFeedback } from '../../hooks/useSaveFeedback';
 import { useTodoEditing } from '../../hooks/useTodoEditing';
@@ -11,7 +11,6 @@ import { TodoDisplay } from './TodoDisplay';
 import { TodoActions } from './TodoActions';
 import { UndoBanner } from './UndoBanner';
 import { getPrimaryActionDetails, type PrimaryActionDetails as PAShape } from './todoItemUtils'; // Import type for clarity
-import { UNDO_TIMEOUT } from '../../lib/constants';
 
 interface TodoItemProps {
   todo: Todo;

@@ -6,7 +6,11 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "biome lint . --error-on-warnings",
+    "typecheck": "tsc --noEmit --incremental false",
+    "test:smoke": "playwright test",
+    "test:source": "node --test tests/source-invariants.mjs",
+    "test:undo": "node --test tests/undo-persistence.test.mjs"
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.3.2",
@@ -17,7 +21,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.511.0",
-    "next": "15.3.2",
+    "next": "15.5.27",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tailwind-merge": "^3.3.0"
@@ -29,6 +33,11 @@
     "@types/react-dom": "^19",
     "tailwindcss": "^4",
     "tw-animate-css": "^1.3.0",
-    "typescript": "^5"
+    "typescript": "^5",
+    "@playwright/test": "1.64.0",
+    "@biomejs/biome": "2.5.15"
+  },
+  "overrides": {
+    "postcss": "8.5.29"
   }
 }

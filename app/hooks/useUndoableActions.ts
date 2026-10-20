@@ -21,7 +21,6 @@ export function useUndoableActions({
   currentFilter,
   setFilter,
   setSearchQuery,
-  focusInput,
   resetInactivityTimer,
 }: UseUndoableActionsProps) {
   const initialUndoableActions = useMemo(() => new Map<number, UndoableActionDetails>(), []);
@@ -40,17 +39,18 @@ export function useUndoableActions({
     setUndoableActions(prev => {
       const newState = prev instanceof Map ? new Map(prev) : new Map(Object.entries(prev).map(([k, v]) => [Number(k), v]));
       actionDetailsToReturn = newState.get(id);
-      const originalTodoText = actionDetailsToReturn?.originalTodo?.text ? actionDetailsToReturn.originalTodo.text.substring(0,20) + '...' : 'task';
+      const originalTodoText = actionDetailsToReturn?.originalTodo?.text ? `${actionDetailsToReturn.originalTodo.text.substring(0,20)}...` : 'task';
       if (newState.delete(id) && showConfirmation && actionDetailsToReturn) {
         const finalMessage = confirmationMessage || `Action on "${originalTodoText}" confirmed.`;
         showStatusMessage(finalMessage);
       }
-      return newState;
+      return Object.fromEntries(newState);
     });
     return actionDetailsToReturn;
   }, [setUndoableActions, showStatusMessage]);
 
  useEffect(() => {
+    const undoTimeouts = undoTimeoutRefs.current;
     let currentActionsAsMap: Map<number, UndoableActionDetails>;
     if (undoableActionsData instanceof Map) {
       currentActionsAsMap = new Map(undoableActionsData);
@@ -72,15 +72,16 @@ export function useUndoableActions({
       const elapsedTime = Date.now() - action.timestamp;
       if (elapsedTime < UNDO_TIMEOUT) {
         updatedActionsMap.set(id, action); 
-        if (undoTimeoutRefs.current.has(id)) {
-          clearTimeout(undoTimeoutRefs.current.get(id)!);
+        const existingTimer = undoTimeouts.get(id);
+        if (existingTimer) {
+          clearTimeout(existingTimer);
         }
         const remainingTime = UNDO_TIMEOUT - elapsedTime;
         const undoTimer = setTimeout(() => {
           const todoText = action.originalTodo?.text ? `"${action.originalTodo.text.substring(0, 20)}..."` : "task";
           clearSpecificUndoAction(id, true, `Deletion of ${todoText} auto-confirmed.`);
         }, remainingTime);
-        undoTimeoutRefs.current.set(id, undoTimer);
+        undoTimeouts.set(id, undoTimer);
       } else {
         mapChanged = true; 
       }
@@ -88,11 +89,13 @@ export function useUndoableActions({
     
     // Simplified update logic
     if (mapChanged || updatedActionsMap.size !== currentActionsAsMap.size) {
-        setUndoableActions(updatedActionsMap);
+        setUndoableActions(Object.fromEntries(updatedActionsMap));
     }
 
     return () => {
-      undoTimeoutRefs.current.forEach(timer => clearTimeout(timer));
+      undoTimeouts.forEach(timer => {
+        clearTimeout(timer);
+      });
     };
   }, [undoableActionsData, clearSpecificUndoAction, setUndoableActions]); 
 
@@ -110,7 +113,7 @@ export function useUndoableActions({
     setUndoableActions(prev => {
       const newState = prev instanceof Map ? new Map(prev) : new Map(Object.entries(prev).map(([k, v]) => [Number(k), v]));
       newState.set(todoToModify.id, { id: todoToModify.id, originalTodo: originalTodoForUndo, actionType, timestamp: markedAt });
-      return newState;
+      return Object.fromEntries(newState);
     });
 
     const undoTimer = setTimeout(() => {
@@ -125,11 +128,10 @@ export function useUndoableActions({
   }, [clearSpecificUndoAction, setUndoableActions, showStatusMessage, resetInactivityTimer]);
 
   const performUndo = useCallback((idToUndo: number) => {
-    let actionDetails: UndoableActionDetails | undefined;
     const currentActions = undoableActionsData instanceof Map ? undoableActionsData : new Map(Object.entries(undoableActionsData || {}).map(([k,v]) => [Number(k),v]));
-    actionDetails = currentActions.get(idToUndo);
+    const actionDetails = currentActions.get(idToUndo);
 
-    if (!actionDetails || !actionDetails.originalTodo) {
+    if (!actionDetails?.originalTodo) {
         console.warn("Could not perform undo: action details or originalTodo not found for id", idToUndo);
         return;
     }

@@ -1,10 +1,10 @@
-import React from 'react';
+import type React from 'react';
 import type { Todo, UndoableActionDetails, FilterValue } from '../../types';
 import type { PrimaryActionType } from './TodoActions';
-import { RotateCcw, Undo2, Trash2 } from 'lucide-react';
+import { RotateCcw, Undo2, Trash2, type LucideProps } from 'lucide-react';
 
 export interface PrimaryActionDetails {
-  icon: React.ReactElement | null; 
+  icon: React.ReactElement<LucideProps> | null; 
   label: string;
   title: string;
   onAction: () => void;
